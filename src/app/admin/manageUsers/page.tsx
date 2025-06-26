@@ -8,7 +8,7 @@ import { Button } from '../components/ui/button'
 
 export default function UsersPage() {
   // Dummy user data. Replace with data from your database or API later.
-  const [users, setUsers] = useState([
+  const [users] = useState([
     { id: 1, name: 'Fatima Khan', role: 'Admin', status: 'Active' },
     { id: 2, name: 'Aisha Patel', role: 'Teacher', status: 'Active' },
     { id: 3, name: 'Zainab Ali', role: 'Teacher', status: 'Active' },
