@@ -1,4 +1,5 @@
 'use client'
+import { authConfig } from '../../../auth.config'
 import StatCard from './components/statCard'
 import QuickAction from './components/quickAction'
 import Notification from './components/notification'
