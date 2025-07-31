@@ -10,9 +10,11 @@
   },
   "dependencies": {
     "@auth/core": "^0.40.0",
+    "bcryptjs": "^3.0.2",
     "lucide-react": "^0.523.0",
     "next": "15.3.4",
     "next-auth": "^5.0.0-beta.29",
+    "postgres": "^3.4.7",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -25,6 +27,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.3.4",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
   }
 }
