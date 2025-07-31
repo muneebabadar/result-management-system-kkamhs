@@ -29,7 +29,8 @@ export default function ClassPromotionPage() {
   const router = useRouter()
   const className = decodeURIComponent(classParam as string)
 
-  const [students, setStudents] = useState(initialStudents)
+  const [students] = useState(initialStudents)
+  // const [students, setStudents] = useState(initialStudents)
   const [conditionalPass, setConditionalPass] = useState<{ [key: string]: boolean }>({})
 
   const handleToggle = (studentName: string) => {

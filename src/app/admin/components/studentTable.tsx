@@ -20,7 +20,7 @@ export const StudentTable = ({ students, onView }: StudentTableProps) => {
             <th className="px-6 py-3">Name</th>
             <th className="px-6 py-3">Class</th>
             <th className="px-6 py-3">Section</th>
-            <th className="px-6 py-3">Parent's Phone</th>
+            <th className="px-6 py-3">Parent&apos;s Phone</th>
             <th className="px-6 py-3">Actions</th>
           </tr>
         </thead>
