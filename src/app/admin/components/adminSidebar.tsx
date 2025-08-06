@@ -15,10 +15,10 @@ import {
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, href: '/admin' },
   { label: 'Manage Users', icon: Users, href: '/admin/manageUsers' },
-  { label: 'Manage Students', icon: GraduationCap, href: '/admin/#' },
+  { label: 'Manage Students', icon: GraduationCap, href: '/admin/manageStudents' },
   { label: 'Manage Classes', icon: BookOpenCheck, href: '/admin/#' },
   { label: 'Reports', icon: BarChart2, href: '/admin/#' },
-  { label: 'Promotions', icon: ArrowUpRight, href: '/admin/#' },
+  { label: 'Promotions', icon: ArrowUpRight, href: '/admin/promotions' },
   { label: 'Settings', icon: Settings, href: '/admin/#' },
 ]
 
