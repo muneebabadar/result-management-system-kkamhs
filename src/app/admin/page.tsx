@@ -33,8 +33,8 @@ export default function AdminDashboard() {
       <section>
         <h2 className="font-semibold text-gray-800 mb-3">Quick Actions</h2>
         <div className="flex flex-wrap gap-3">
-          <QuickAction icon={Users} label="Manage Users" href="/admin/users" />
-          <QuickAction icon={GraduationCap} label="Manage Students" href="/admin/students" />
+          <QuickAction icon={Users} label="Manage Users" href="/admin/manageUsers" />
+          <QuickAction icon={GraduationCap} label="Manage Students" href="/admin/manageStudents" />
           <QuickAction icon={BookOpenCheck} label="Manage Classes" href="/admin/classes" />
           <QuickAction icon={BarChart2} label="Reports" href="/admin/reports" />
           <QuickAction icon={Trophy} label="Promotions" href="/admin/promotions" />
