@@ -11,6 +11,7 @@ import {
   BookOpenCheck,
   BarChart2,
   Trophy,
+  Sliders,
 } from 'lucide-react'
 
 type DashboardNotification = {
@@ -87,15 +88,15 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
           label="Total Students"
-          value={loading ? '—' : data.totalStudents}
+          value={loading ? 0 : data.totalStudents}
         />
         <StatCard
           label="Total Classes"
-          value={loading ? '—' : data.totalClasses}
+          value={loading ? 0 : data.totalClasses}
         />
         <StatCard
           label="Total Teachers"
-          value={loading ? '—' : data.totalTeachers}
+          value={loading ? 0 : data.totalTeachers}
         />
       </div>
 
@@ -106,6 +107,7 @@ export default function AdminDashboard() {
           <QuickAction icon={Users} label="Manage Users" href="/admin/manageUsers" />
           <QuickAction icon={GraduationCap} label="Manage Students" href="/admin/manageStudents" />
           <QuickAction icon={BookOpenCheck} label="Manage Classes" href="/admin/manageClasses" />
+          <QuickAction icon={Sliders} label="Set Weightages" href="/admin/weightage" />
           <QuickAction icon={BarChart2} label="Reports" href="/admin/reports" />
           <QuickAction icon={Trophy} label="Promotions" href="/admin/promotions" />
         </div>
