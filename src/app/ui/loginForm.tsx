@@ -35,16 +35,24 @@ export default function LoginForm() {
         return;
       }
 
-      // Store user info in localStorage
-      localStorage.setItem('user', JSON.stringify(result.user));
+    // 1. NORMALIZE THE ROLE (Handle 'Admin' vs 'admin')
+      const userRole = result.user.role ? result.user.role.toLowerCase() : '';
 
-      // Redirect based on role
-      if (result.user.role === 'Admin') {
+      // 2. STORE USER SAFELY
+      // We explicitly construct the object to ensure 'role' is saved in a way the Layout understands
+      localStorage.setItem('user', JSON.stringify({
+        ...result.user,
+        role: userRole // Save as lowercase to match Layout checks
+      }));
+
+      // 3. REDIRECT BASED ON NORMALIZED ROLE
+      if (userRole === 'admin') {
         router.push('/admin');
-      } else if (result.user.role === 'Teacher') {
+      } else if (userRole === 'teacher') {
         router.push('/teacher');
       } else {
-        router.push('/');
+        // Fallback for students or unknown roles
+        router.push('/'); 
       }
     } catch (err) {
       console.error('Login error:', err);
