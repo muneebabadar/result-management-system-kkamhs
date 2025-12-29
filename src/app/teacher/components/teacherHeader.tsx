@@ -2,17 +2,17 @@
 
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 
 export default function TeacherHeader() {
   const [userName, setUserName] = useState('Teacher')
+  const router = useRouter()
 
   useEffect(() => {
-    // Get the user name from local storage
     try {
       const storedUser = localStorage.getItem('user')
       if (storedUser) {
         const userObj = JSON.parse(storedUser)
-        // Use the name from the stored object, or fallback to 'Teacher'
         if (userObj.name) setUserName(userObj.name)
       }
     } catch (e) {
@@ -20,9 +20,14 @@ export default function TeacherHeader() {
     }
   }, [])
 
+  const handleLogout = () => {
+    localStorage.removeItem('user')
+    router.push('/') // Redirect to login
+  }
+
   const navLinks = [
     { name: 'Dashboard', href: '/teacher' },
-    { name: 'Classes', href: '/teacher' }, // Pointing to same page for now
+    { name: 'Classes', href: '/teacher' },
     { name: 'Students', href: '#' },
     { name: 'Results', href: '#' },
     { name: 'Reports', href: '#' },
@@ -35,14 +40,18 @@ export default function TeacherHeader() {
         <div className="flex justify-between h-20 items-center">
           
           {/* Left: School Name */}
-          <div className="flex-shrink-0 flex items-center">
+          <div className="flex-shrink-0 flex items-center gap-3">
             <h1 className="text-lg font-bold text-gray-900 tracking-tight">
               Khadija Kazi Ali Memorial High School
             </h1>
+            <span className="hidden sm:inline-block px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+              Teacher Portal
+            </span>
           </div>
 
           {/* Right: Navigation & Profile */}
-          <div className="flex items-center space-x-8">
+          <div className="flex items-center space-x-6">
+            
             {/* Nav Links */}
             <nav className="hidden md:flex space-x-6">
               {navLinks.map((link) => (
@@ -56,23 +65,33 @@ export default function TeacherHeader() {
               ))}
             </nav>
 
-            {/* Profile Section */}
-            <div className="flex items-center gap-3 pl-4 border-l border-gray-200">
-              {/* Name Display */}
-              <span className="text-sm font-bold text-gray-800 hidden sm:block">
-                {userName}
-              </span>
+            {/* Profile & Logout Section */}
+            <div className="flex items-center gap-4 pl-6 border-l border-gray-200">
               
-              {/* Avatar Image */}
-              <div className="h-10 w-10 rounded-full overflow-hidden border-2 border-gray-100 relative">
-                {/* You can replace this src with your actual avatar URL or a user.avatar property */}
-                <img 
-                  src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" 
-                  alt="Profile"
-                  className="h-full w-full object-cover"
-                />
+              {/* Profile Info */}
+              <div className="flex items-center gap-3">
+                <div className="text-right hidden sm:block">
+                  <div className="text-sm font-bold text-gray-900">{userName}</div>
+                  <div className="text-xs text-gray-500">Teacher</div>
+                </div>
+                {/* Avatar */}
+                <div className="h-9 w-9 rounded-full bg-gray-800 text-white flex items-center justify-center font-bold border border-gray-200">
+                   {userName.charAt(0).toUpperCase()}
+                </div>
               </div>
+
+              {/* Vertical Separator */}
+              <div className="h-6 w-px bg-gray-300 mx-1"></div>
+
+              {/* Logout Button */}
+              <button 
+                onClick={handleLogout}
+                className="text-sm font-medium text-red-600 hover:text-red-800 transition-colors"
+              >
+                Logout
+              </button>
             </div>
+
           </div>
 
         </div>
