@@ -1,4 +1,3 @@
-// @ts-expect-error Async Server Component
 import "./globals.css";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

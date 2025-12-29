@@ -33,8 +33,8 @@ export default function ClassDetailsPage() {
           setClassTitle(`${data.className} - ${data.subjectName}`);
           setWeights(data.weights);
         }
-      } catch (err) {
-        console.error(err);
+      } catch {
+        console.error("An error occurred");
       } finally {
         setLoading(false);
       }

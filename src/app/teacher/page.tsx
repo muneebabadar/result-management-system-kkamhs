@@ -16,7 +16,6 @@ export default function TeacherPage() {
   const [classes, setClasses] = useState<ClassData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const router = useRouter();
 
   const fetchClasses = async () => {
     setLoading(true);

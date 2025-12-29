@@ -54,7 +54,7 @@ export default function GradingSettings() {
         body: JSON.stringify(config)
       });
       if (res.ok) alert('Settings saved for ' + config.className);
-    } catch (e) {
+    } catch {
       alert('Failed to save');
     }
   };
