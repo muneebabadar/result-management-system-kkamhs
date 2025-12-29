@@ -42,9 +42,9 @@ export default function LoginForm() {
       if (result.user.role === 'Admin') {
         router.push('/admin');
       } else if (result.user.role === 'Teacher') {
-        router.push('/teacher/dashboard');
+        router.push('/teacher');
       } else {
-        router.push('/dashboard');
+        router.push('/');
       }
     } catch (err) {
       console.error('Login error:', err);
