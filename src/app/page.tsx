@@ -1,41 +1,37 @@
-// File: app/page.tsx
-import { neon } from '@neondatabase/serverless';
+import Image from "next/image";
+import { Suspense } from "react";
+import LoginForm from "./ui/loginForm";
 
-export default function Page() {
-  async function create(formData: FormData) {
-    'use server';
-
-    const sql = neon(process.env.DATABASE_URL!);
-
-    const name = formData.get('name') as string;
-    const value = parseFloat(formData.get('value') as string);
-
-    if (!name || isNaN(value)) return;
-
-    await sql`
-      INSERT INTO playing_with_neon (name, value)
-      VALUES (${name}, ${value})
-    `;
-  }
-
+export default function Login() {
   return (
-    <form action={create} className="flex flex-col gap-2 p-4">
-      <input
-        type="text"
-        placeholder="Enter a name"
-        name="name"
-        className="border p-2 rounded"
-      />
-      <input
-        type="number"
-        step="any"
-        placeholder="Enter a value"
-        name="value"
-        className="border p-2 rounded"
-      />
-      <button type="submit" className="bg-blue-500 text-white p-2 rounded">
-        Submit
-      </button>
-    </form>
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
+        {/* Login Card */}
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-8 space-y-6">
+
+            {/* Logo */}
+            <div className="flex justify-center">
+            <Image
+                src="/logo.jpg" 
+                alt="School Logo"
+                width={80}
+                height={80}
+                className="rounded-full"
+            />
+            </div>
+
+            {/* School Name */}
+            <h2 className="text-center text-xl font-semibold text-gray-900">
+            Khadija Kazi Ali Memorial High School
+            </h2>
+
+            {/* Heading */}
+            <h3 className="text-center font-bold text-gray-700">
+            Login to Your Account
+            </h3>
+            <Suspense>
+                <LoginForm/>
+            </Suspense>
+        </div>
+    </div>
   );
 }

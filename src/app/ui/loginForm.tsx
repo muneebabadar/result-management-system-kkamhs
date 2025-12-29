@@ -1,30 +1,55 @@
-// src/ui/loginForm.tsx
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 
 export default function LoginForm() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setLoading(true);
 
-    const result = await signIn("credentials", {
-      redirect: false,
-      email: username, // Map username to email for NextAuth Credentials
-      password,
-    });
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: username,
+          password: password,
+        }),
+      });
 
-    if (result?.error) {
-      setError("Invalid username or password");
-    } else {
-      router.push("/dashboard"); // Redirect to dashboard or role-based route
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(result.error || 'Invalid username or password');
+        setLoading(false);
+        return;
+      }
+
+      // Store user info in localStorage
+      localStorage.setItem('user', JSON.stringify(result.user));
+
+      // Redirect based on role
+      if (result.user.role === 'Admin') {
+        router.push('/admin');
+      } else if (result.user.role === 'Teacher') {
+        router.push('/teacher/dashboard');
+      } else {
+        router.push('/dashboard');
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('An unexpected error occurred');
+      setLoading(false);
     }
   };
 
@@ -37,7 +62,8 @@ export default function LoginForm() {
           placeholder="Username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          className="w-full h-14 rounded-xl bg-[#f0f2f5] px-4 text-base text-[#111418] placeholder:text-[#60758a] focus:outline-none"
+          disabled={loading}
+          className="w-full h-14 rounded-xl bg-[#f0f2f5] px-4 text-base text-[#111418] placeholder:text-[#60758a] focus:outline-none disabled:opacity-50"
           required
         />
       </div>
@@ -49,7 +75,8 @@ export default function LoginForm() {
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full h-14 rounded-xl bg-[#f0f2f5] px-4 text-base text-[#111418] placeholder:text-[#60758a] focus:outline-none"
+          disabled={loading}
+          className="w-full h-14 rounded-xl bg-[#f0f2f5] px-4 text-base text-[#111418] placeholder:text-[#60758a] focus:outline-none disabled:opacity-50"
           required
         />
       </div>
@@ -65,9 +92,10 @@ export default function LoginForm() {
       {/* Login Button */}
       <button
         type="submit"
-        className="w-full h-12 rounded-xl bg-[#0c7ff2] text-white text-sm font-bold tracking-wide hover:bg-[#096ad1] transition"
+        disabled={loading}
+        className="w-full h-12 rounded-xl bg-[#0c7ff2] text-white text-sm font-bold tracking-wide hover:bg-[#096ad1] transition disabled:bg-gray-400 disabled:cursor-not-allowed"
       >
-        Login
+        {loading ? 'Logging in...' : 'Login'}
       </button>
     </form>
   );
