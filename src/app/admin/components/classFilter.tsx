@@ -1,69 +1,82 @@
-// File: app/admin/components/classFilter.tsx
+'use client'
 
-type Class = {
-  id: number;
-  className: string;
-  section: string;
-  teacher: string;
-  students: number;
-};
+import { useEffect, useState } from 'react'
 
-type ClassFilterProps = {
-  classes: Class[];
-  onFilterChange: (filter: { search: string; className: string; section: string }) => void;
-};
+export type ClassFilters = {
+  search: string
+  classId: string
+  sectionId: string
+}
 
-export const ClassFilter = ({ classes, onFilterChange }: ClassFilterProps) => {
-  const classOptions = Array.from(new Set(classes.map((cls) => cls.className)));
-  const sectionOptions = Array.from(new Set(classes.map((cls) => cls.section)));
+export function ClassFilter({
+  classOptions,
+  sectionOptions,
+  onFilterChange,
+}: {
+  classOptions: { id: number; name: string }[]
+  sectionOptions: { id: number; name: string }[]
+  onFilterChange: (filters: ClassFilters) => void
+}) {
+  const [search, setSearch] = useState('')
+  const [classId, setClassId] = useState('')
+  const [sectionId, setSectionId] = useState('')
 
-  const handleSearchChange = (search: string) => {
-    onFilterChange({ search, className: '', section: '' });
-  };
+  const debouncedSearch = useDebouncedValue(search, 250)
 
-  const handleClassChange = (className: string) => {
-    onFilterChange({ search: '', className, section: '' });
-  };
-
-  const handleSectionChange = (section: string) => {
-    onFilterChange({ search: '', className: '', section });
-  };
+  useEffect(() => {
+    onFilterChange({
+      search: debouncedSearch,
+      classId,
+      sectionId,
+    })
+  }, [debouncedSearch, classId, sectionId, onFilterChange])
 
   return (
-    <div className="flex gap-4 items-center">
-      {/* Search by teacher */}
+    <div className="flex gap-4 items-center flex-wrap">
       <input
         type="text"
         placeholder="Search teacher"
         className="w-full max-w-md h-10 px-4 rounded-md bg-gray-100 border border-gray-200 focus:outline-none"
-        onChange={(e) => handleSearchChange(e.target.value)}
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
       />
 
-      {/* Filter by class */}
       <select
-        onChange={(e) => handleClassChange(e.target.value)}
+        value={classId}
+        onChange={(e) => setClassId(e.target.value)}
         className="h-10 px-3 rounded-md bg-gray-100 border border-gray-200"
       >
         <option value="">Class</option>
-        {classOptions.map((className, idx) => (
-          <option key={idx} value={className}>
-            {className}
+        {classOptions.map((c) => (
+          <option key={c.id} value={String(c.id)}>
+            {c.name}
           </option>
         ))}
       </select>
 
-      {/* Filter by section */}
       <select
-        onChange={(e) => handleSectionChange(e.target.value)}
+        value={sectionId}
+        onChange={(e) => setSectionId(e.target.value)}
         className="h-10 px-3 rounded-md bg-gray-100 border border-gray-200"
       >
         <option value="">Section</option>
-        {sectionOptions.map((section, idx) => (
-          <option key={idx} value={section}>
-            {section}
+        {sectionOptions.map((s) => (
+          <option key={s.id} value={String(s.id)}>
+            {s.name}
           </option>
         ))}
       </select>
     </div>
-  );
-};
+  )
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debounced, setDebounced] = useState(value)
+
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delayMs)
+    return () => clearTimeout(id)
+  }, [value, delayMs])
+
+  return debounced
+}
