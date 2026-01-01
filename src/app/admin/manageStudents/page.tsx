@@ -98,7 +98,7 @@ setSections(Array.isArray(sectionsJson) ? sectionsJson : sectionsJson.data ?? []
   }, [rawStudents, classMap, sectionMap])
 
   /* ===============================
-     Filter handler (🔥 FIX)
+     Filter handler
   ================================ */
   const handleFilterChange = (
     key: 'name' | 'classId' | 'sectionId',
