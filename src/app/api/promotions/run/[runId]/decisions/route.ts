@@ -53,7 +53,7 @@ export async function PUT(request: Request, { params }: { params: { runId: strin
     }
 
     return NextResponse.json({ success: true }, { status: 200 })
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

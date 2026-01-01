@@ -56,7 +56,13 @@ export async function GET(request: Request) {
 
     if (cohErr) return NextResponse.json({ error: cohErr.message }, { status: 500 })
 
-    const label = `${cohort?.classes?.name ?? ''}${cohort?.sections?.name ?? ''}`
+    const c = cohort as any
+    
+    // Check if it's an object OR an array (safe fallback)
+    const className = c?.classes?.name ?? c?.classes?.[0]?.name ?? ''
+    const sectionName = c?.sections?.name ?? c?.sections?.[0]?.name ?? ''
+    
+    const label = `${className} ${sectionName}`.trim()
 
     // ==========================================================
     // Draft run: fetch-or-create with duplicate-safe fallback

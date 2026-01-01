@@ -109,7 +109,7 @@ export async function POST(_: Request, { params }: { params: { runId: string } }
       { success: true, data: { promoted: inserts.length } },
       { status: 200 }
     )
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

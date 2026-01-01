@@ -95,7 +95,7 @@ export async function GET(request: Request) {
     })
 
     return NextResponse.json({ success: true, data: filtered }, { status: 200 })
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
