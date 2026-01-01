@@ -2,7 +2,11 @@
 
 A comprehensive academic management solution designed for **Khadija Kazi Ali Memorial High School**. This system facilitates the management of students, classes, and academic results with strict Role-Based Access Control (RBAC) for Administrators and Teachers.
 
-## 🚀 Tech Stack
+**Live Demo:** [https://result-management-system-kkamhs-cnx13m3xt.vercel.app/](https://result-management-system-kkamhs-cnx13m3xt.vercel.app/)
+
+---
+
+## Technology Stack
 
 * **Framework:** [Next.js 15+](https://nextjs.org/) (App Router)
 * **Language:** [TypeScript](https://www.typescriptlang.org/)
@@ -11,44 +15,48 @@ A comprehensive academic management solution designed for **Khadija Kazi Ali Mem
 * **Authentication:** Custom Auth with Supabase & LocalStorage
 * **Deployment:** Vercel
 
-## ✨ Key Features
+---
 
-* **🔐 Role-Based Access Control:** Secure login flows distinguishing between `Admin` and `Teacher` roles.
-* **📊 Admin Dashboard:**
-    * Manage Students, Teachers, and Classes.
-    * Configure Grade Weightages.
-    * Generate Reports.
-* **🎓 Promotion Logic:** Automated system to draft and finalize student promotions based on academic performance.
-* **🏫 Teacher Portal:** (In Progress) Interface for teachers to input grades and view class rosters.
-* **⚡ Real-time Data:** Instant data retrieval and updates using Supabase.
+## Key Features
 
-## 🛠️ Getting Started
+### Core Infrastructure
+* **Role-Based Access Control (RBAC):** Secure login flows that strictly differentiate between `Admin` and `Teacher` access privileges.
+* **Real-time Synchronization:** Instant data retrieval and updates utilizing Supabase.
 
-Follow these steps to set up the project locally.
+### Admin Dashboard
+* **Academic Management:** Comprehensive tools to manage Students, Teachers, and Class structures.
+* **Grade Configuration:** Flexible settings to define and adjust grade weightages.
+* **Reporting:** Automated generation of academic reports.
+* **Promotion Logic:** Built-in algorithms to draft and finalize student promotions based on academic performance data.
+
+### Teacher Portal (In Development)
+* **Grade Entry:** Dedicated interface for teachers to input and modify student grades.
+* **Class Rosters:** View and manage assigned student lists.
+
+---
+
+## Getting Started
+
+Follow these steps to set up the project locally for development.
 
 ### 1. Prerequisites
-Ensure you have the following installed:
+Ensure the following are installed on your machine:
 * [Node.js](https://nodejs.org/) (v18 or higher)
-* npm or yarn
+* npm (Node Package Manager)
 
 ### 2. Clone the Repository
 ```bash
 git clone [https://github.com/muneebabadar/result-management-system-kkamhs.git](https://github.com/muneebabadar/result-management-system-kkamhs.git)
 cd result-management-system-kkamhs
 ```
+### 3. Install Dependencies
+``` npm install ```
 
-### 3. Environment Variables
-Create a .env.local file in the root directory. You need to add your Supabase credentials here
+### 4. Environment Configuration
+Create a .env.local file in the root directory. Add the following Supabase credentials:
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
-
-### 4. Run the Development Server
-npm run dev
-
-## 🚀 Live Demo
-
-The application is deployed on Vercel and is currently live. You can access the production environment here:
-
-🔗 **[Click here to view the Result Management System]([https://your-project-name.vercel.app](https://result-management-system-kkamhs-cnx13m3xt.vercel.app/))**
+### 5. Launch Development Server
+``` npm run dev ```
