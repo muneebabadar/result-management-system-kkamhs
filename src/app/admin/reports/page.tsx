@@ -1,215 +1,162 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Calendar, ChevronDown, Download, FileText, Loader2 } from 'lucide-react'
 import AdminHeader from '../components/adminHeader'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
-import JSZip from 'jszip'
-import { saveAs } from 'file-saver'
 
-// --- Types ---
 type ReportType = 'individual' | 'class-wise' | 'annual'
 
-type ClassSection = {
+type CohortOption = {
   id: number
-  classes: { name: string } | { name: string }[] | null
-  sections: { name: string } | { name: string }[] | null
+  label: string
 }
 
-type Student = {
+type StudentOption = {
   id: number
   full_name: string
 }
 
 export default function GenerateReports() {
-  // --- State ---
   const [reportType, setReportType] = useState<ReportType>('individual')
-  
-  // Data State
-  const [classes, setClasses] = useState<ClassSection[]>([])
-  const [students, setStudents] = useState<Student[]>([])
-  
-  // Loading State
-  const [loadingClasses, setLoadingClasses] = useState(true)
+
+  const [cohorts, setCohorts] = useState<CohortOption[]>([])
+  const [students, setStudents] = useState<StudentOption[]>([])
+
+  const [loadingCohorts, setLoadingCohorts] = useState(true)
   const [loadingStudents, setLoadingStudents] = useState(false)
 
-  // Selection State
-  const [selectedClassId, setSelectedClassId] = useState('')
+  const [selectedClassSectionId, setSelectedClassSectionId] = useState('')
   const [selectedStudentId, setSelectedStudentId] = useState('')
+
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
-  
-  // Generation State
+
   const [generating, setGenerating] = useState(false)
-  const [loadingText, setLoadingText] = useState('Generate Report')
+  const [loadingText, setLoadingText] = useState('Download Reports')
+  const [error, setError] = useState('')
 
-  // --- Helper to safely get names from joined data ---
-  const getJoinedName = (data: any) => {
-    if (!data) return ''
-    if (Array.isArray(data)) return data[0]?.name || ''
-    return data.name || ''
-  }
+  const canRun = useMemo(() => {
+    if (reportType === 'annual') return true
+    if (reportType === 'class-wise') return !!selectedClassSectionId
+    if (reportType === 'individual') return !!selectedStudentId // enforce student selection
+    return false
+  }, [reportType, selectedClassSectionId, selectedStudentId])
 
-  // --- 1. Fetch Classes on Mount (FROM API ROUTE) ---
+  // Load cohorts
   useEffect(() => {
-    const fetchClasses = async () => {
+    const load = async () => {
+      setLoadingCohorts(true)
+      setError('')
       try {
-        console.log('Fetching classes from API...')
-        
-        const response = await fetch('/api/admin/classes')
-        const result = await response.json()
-
-        console.log('Classes response:', result)
-
-        if (!response.ok) {
-          throw new Error(result.error || 'Failed to fetch classes')
-        }
-
-        if (result.data) setClasses(result.data)
-      } catch (err) {
-        console.error('Error fetching classes:', err)
+        const res = await fetch('/api/reports/options', { cache: 'no-store' })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to load classes')
+        setCohorts(json.data.cohorts || [])
+      } catch (e) {
+        setError((e as Error).message)
       } finally {
-        setLoadingClasses(false)
+        setLoadingCohorts(false)
       }
     }
-    fetchClasses()
+    load()
   }, [])
 
-  // --- 2. Fetch Students when Class Changes (FROM API ROUTE) ---
+  // Load students for selected cohort
   useEffect(() => {
     setSelectedStudentId('')
     setStudents([])
 
-    if (!selectedClassId) return
+    if (!selectedClassSectionId) return
 
-    const fetchStudents = async () => {
+    const loadStudents = async () => {
       setLoadingStudents(true)
+      setError('')
       try {
-        console.log('Fetching students for class:', selectedClassId)
-        
-        const response = await fetch(`/api/admin/students?classId=${selectedClassId}`)
-        const result = await response.json()
-
-        console.log('Students response:', result)
-
-        if (!response.ok) {
-          throw new Error(result.error || 'Failed to fetch students')
-        }
-
-        if (result.data) setStudents(result.data)
-      } catch (err) {
-        console.error('Error fetching students:', err)
+        const res = await fetch(`/api/reports/options?classSectionId=${selectedClassSectionId}`, { cache: 'no-store' })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to load students')
+        setStudents(json.data.students || [])
+      } catch (e) {
+        setError((e as Error).message)
       } finally {
         setLoadingStudents(false)
       }
     }
 
-    fetchStudents()
-  }, [selectedClassId])
+    loadStudents()
+  }, [selectedClassSectionId])
 
-  // --- Main Report Logic ---
-  const handleGenerate = async () => {
-    if (!selectedClassId) return
+  // Reset selections when report type changes
+  useEffect(() => {
+    setError('')
+    if (reportType === 'annual') {
+      setSelectedClassSectionId('')
+      setSelectedStudentId('')
+    }
+    if (reportType === 'class-wise') {
+      setSelectedStudentId('')
+    }
+  }, [reportType])
+
+  const buildPayload = () => {
+    const payload: any = { reportType }
+    if (selectedClassSectionId) payload.classSectionId = Number(selectedClassSectionId)
+    if (selectedStudentId) payload.studentId = Number(selectedStudentId)
+    if (startDate) payload.startDate = startDate
+    if (endDate) payload.endDate = endDate
+    return payload
+  }
+
+  const download = async (kind: 'pdf' | 'excel') => {
     setGenerating(true)
-    setLoadingText('Fetching Data...')
+    setError('')
+    setLoadingText(kind === 'pdf' ? 'Generating PDF...' : 'Generating Excel...')
 
     try {
-      // Fetch Data from Secure API Route
-      const res = await fetch(`/api/admin/reports?classId=${selectedClassId}`, { 
-        cache: 'no-store' 
+      // Optional: validate by generating JSON first (helps with better user errors)
+      const previewRes = await fetch('/api/reports/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildPayload()),
       })
-      const result = await res.json()
+      const previewJson = await previewRes.json().catch(() => ({}))
+      if (!previewRes.ok) throw new Error(previewJson.error || 'Report cannot be generated for this selection.')
 
-      if (!res.ok) throw new Error(result.error || 'Failed to fetch report data')
-
-      // Filter: If a specific student is selected, only keep them
-      let enrollments = result.data
-      if (selectedStudentId) {
-        enrollments = enrollments.filter((e: any) => e.students.id === Number(selectedStudentId))
-      }
-
-      if (!enrollments || enrollments.length === 0) {
-        alert('No data found for the selected criteria.')
-        setGenerating(false)
-        return
-      }
-
-      // Generate PDFs and Zip (rest of your logic stays the same)
-      const zip = new JSZip()
-      const folderName = `Reports_Class_${selectedClassId}`
-      const folder = zip.folder(folderName)
-
-      enrollments.forEach((record: any, index: number) => {
-        setLoadingText(`Generating ${index + 1}/${enrollments.length}...`)
-        
-        const doc = new jsPDF()
-        // const studentName = record.students?.full_name || 'Unknown'
-        const studentObj = Array.isArray(record.students) ? record.students[0] : record.students
-        const studentName = studentObj?.full_name || 'Unknown'
-        
-        doc.setFontSize(18)
-        doc.text('Khadija Kazi Ali Memorial High School', 105, 15, { align: 'center' })
-        doc.setFontSize(12)
-        doc.text('Academic Report Card', 105, 22, { align: 'center' })
-
-        doc.setFontSize(10)
-        doc.text(`Student Name: ${studentName}`, 14, 35)
-        doc.text(`Roll Number: ${record.roll_number || 'N/A'}`, 14, 40)
-        
-        const selectedClassObj = classes.find(c => c.id === Number(selectedClassId))
-        const className = getJoinedName(selectedClassObj?.classes)
-        const sectionName = getJoinedName(selectedClassObj?.sections)
-        
-        doc.text(`Class: ${className} - ${sectionName}`, 14, 45)
-
-        // const grades = record.student_grades || []
-        const grades = studentObj?.student_grades || []
-        const tableBody = grades.map((g: any) => [
-        //   g.subjects?.name || 'Subject',
-          (Array.isArray(g.subjects) ? g.subjects[0]?.name : g.subjects?.name) || 'Subject',
-          g.marks_obtained || 0,
-          g.marks_obtained >= 40 ? 'Pass' : 'Fail'
-        ])
-
-        autoTable(doc, {
-          startY: 55,
-          head: [['Subject', 'Marks Obtained', 'Status']],
-          body: tableBody,
-          theme: 'grid',
-          headStyles: { fillColor: [23, 23, 23] }
-        })
-
-        doc.text('__________________', 14, doc.internal.pageSize.height - 30)
-        doc.text('Principal Signature', 14, doc.internal.pageSize.height - 25)
-
-        const pdfBlob = doc.output('blob')
-        const cleanName = studentName.replace(/[^a-z0-9]/gi, '_')
-        const fileName = `${record.roll_number}_${cleanName}.pdf`
-        folder?.file(fileName, pdfBlob)
+      const endpoint = kind === 'pdf' ? '/api/reports/export/pdf' : '/api/reports/export/excel'
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildPayload()),
       })
 
-      setLoadingText('Zipping & Downloading...')
-      const content = await zip.generateAsync({ type: 'blob' })
-      saveAs(content, `${folderName}.zip`)
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error || 'Download failed')
+      }
 
-    } catch (err: any) {
-      console.error(err)
-      alert('Error: ' + err.message)
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = kind === 'pdf' ? 'report.pdf' : 'report.xlsx'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (e) {
+      setError((e as Error).message)
     } finally {
       setGenerating(false)
-      setLoadingText('Generate Report')
+      setLoadingText('Download Reports')
     }
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <AdminHeader />
-      
+
       <main className="max-w-5xl mx-auto p-6">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-          
-          {/* Header */}
           <h1 className="text-2xl font-bold text-gray-900 mb-8 flex items-center gap-2">
             <FileText className="w-6 h-6" />
             Generate Reports
@@ -219,81 +166,85 @@ export default function GenerateReports() {
           <div className="mb-8">
             <label className="block text-sm font-semibold text-gray-700 mb-3">Report Type</label>
             <div className="flex flex-wrap gap-3">
-              {['Individual Student Report', 'Class-wise Report', 'Annual Report'].map((label) => {
-                 const typeKey = label.split(' ')[0].toLowerCase() as ReportType
-                 const isActive = reportType === typeKey || (label === 'Individual Student Report' && reportType === 'individual')
-                 return (
-                   <button
-                     key={label}
-                     onClick={() => setReportType(typeKey)}
-                     className={`px-5 py-2.5 rounded-lg text-sm font-medium border transition-all ${
-                       isActive ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                     }`}
-                   >
-                     {label}
-                   </button>
-                 )
+              {[
+                { label: 'Individual Student Report', key: 'individual' as ReportType },
+                { label: 'Class-wise Report', key: 'class-wise' as ReportType },
+                { label: 'Annual Report', key: 'annual' as ReportType },
+              ].map((t) => {
+                const isActive = reportType === t.key
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => setReportType(t.key)}
+                    className={`px-5 py-2.5 rounded-lg text-sm font-medium border transition-all ${
+                      isActive
+                        ? 'bg-gray-900 text-white border-gray-900'
+                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                )
               })}
             </div>
           </div>
 
           {/* Filters */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            
-            {/* 1. SELECT CLASS */}
-            <div>
+            {/* Select Class */}
+            <div className={`${reportType === 'annual' ? 'opacity-50 pointer-events-none' : ''}`}>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Class {loadingClasses && <span className="text-xs text-gray-400 ml-2">(Loading...)</span>}
+                Select Class {loadingCohorts && <span className="text-xs text-gray-400 ml-2">(Loading...)</span>}
               </label>
               <div className="relative">
                 <select
-                  value={selectedClassId}
-                  onChange={(e) => setSelectedClassId(e.target.value)}
-                  disabled={loadingClasses}
+                  value={selectedClassSectionId}
+                  onChange={(e) => setSelectedClassSectionId(e.target.value)}
+                  disabled={loadingCohorts || reportType === 'annual'}
                   className="w-full appearance-none bg-white border border-gray-200 text-gray-700 py-3 px-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-200 cursor-pointer disabled:bg-gray-50"
                 >
                   <option value="">Select Class</option>
-                  {classes.map((c) => {
-                    const className = getJoinedName(c.classes)
-                    const sectionName = getJoinedName(c.sections)
-                    return (
-                      <option key={c.id} value={c.id}>
-                        {className} {sectionName ? `- ${sectionName}` : ''}
-                      </option>
-                    )
-                  })}
+                  {cohorts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
                 </select>
                 <ChevronDown className="absolute right-4 top-3.5 text-gray-400 pointer-events-none" size={16} />
               </div>
             </div>
 
-            {/* 2. SELECT STUDENT */}
-            <div className={`transition-opacity ${reportType === 'class-wise' ? 'opacity-50 pointer-events-none' : ''}`}>
+            {/* Select Student */}
+            <div className={`${reportType !== 'individual' ? 'opacity-50 pointer-events-none' : ''}`}>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Select Student {loadingStudents && <span className="text-xs text-gray-400 ml-2">(Loading...)</span>}
-                {!selectedClassId && <span className="text-xs text-gray-400 ml-2">(Choose class first)</span>}
+                {!selectedClassSectionId && reportType === 'individual' && (
+                  <span className="text-xs text-gray-400 ml-2">(Choose class first)</span>
+                )}
               </label>
               <div className="relative">
                 <select
                   value={selectedStudentId}
                   onChange={(e) => setSelectedStudentId(e.target.value)}
-                  disabled={!selectedClassId || reportType === 'class-wise' || loadingStudents}
+                  disabled={!selectedClassSectionId || reportType !== 'individual' || loadingStudents}
                   className="w-full appearance-none bg-white border border-gray-200 text-gray-700 py-3 px-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-200 cursor-pointer disabled:bg-gray-50 disabled:text-gray-400"
                 >
-                  <option value="">All Students</option>
+                  <option value="">Select Student</option>
                   {students.map((s) => (
-                    <option key={s.id} value={s.id}>{s.full_name}</option>
+                    <option key={s.id} value={s.id}>
+                      {s.full_name}
+                    </option>
                   ))}
                 </select>
                 {loadingStudents ? (
-                   <Loader2 className="absolute right-4 top-3.5 text-gray-400 animate-spin" size={16} />
+                  <Loader2 className="absolute right-4 top-3.5 text-gray-400 animate-spin" size={16} />
                 ) : (
-                   <ChevronDown className="absolute right-4 top-3.5 text-gray-400 pointer-events-none" size={16} />
+                  <ChevronDown className="absolute right-4 top-3.5 text-gray-400 pointer-events-none" size={16} />
                 )}
               </div>
             </div>
 
-            {/* Date Inputs */}
+            {/* Start Date */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
               <div className="relative">
@@ -305,8 +256,10 @@ export default function GenerateReports() {
                 />
                 {!startDate && <Calendar className="absolute right-4 top-3.5 text-gray-400 pointer-events-none" size={18} />}
               </div>
+              <p className="text-xs text-gray-400 mt-1">Filters by enrollment created date (current schema limitation).</p>
             </div>
 
+            {/* End Date */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">End Date</label>
               <div className="relative">
@@ -321,13 +274,19 @@ export default function GenerateReports() {
             </div>
           </div>
 
-          {/* Action Button */}
-          <div className="flex justify-end pt-6 border-t border-gray-100">
+          {error && (
+            <div className="mb-6 p-3 bg-red-100 border border-red-400 text-red-700 rounded text-sm">
+              {error}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex justify-end gap-3 pt-6 border-t border-gray-100">
             <button
-              onClick={handleGenerate}
-              disabled={generating || !selectedClassId}
-              className={`flex items-center gap-2 px-8 py-3 rounded-lg font-medium text-white transition-all shadow-md ${
-                generating || !selectedClassId ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
+              onClick={() => download('pdf')}
+              disabled={generating || !canRun}
+              className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium text-white transition-all shadow-md ${
+                generating || !canRun ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
               }`}
             >
               {generating ? (
@@ -338,12 +297,31 @@ export default function GenerateReports() {
               ) : (
                 <>
                   <Download size={18} />
-                  Download Reports
+                  Download PDF
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={() => download('excel')}
+              disabled={generating || !canRun}
+              className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium text-white transition-all shadow-md ${
+                generating || !canRun ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-700 hover:bg-gray-600'
+              }`}
+            >
+              {generating ? (
+                <>
+                  <Loader2 className="animate-spin" size={18} />
+                  <span>{loadingText}</span>
+                </>
+              ) : (
+                <>
+                  <Download size={18} />
+                  Download Excel
                 </>
               )}
             </button>
           </div>
-
         </div>
       </main>
     </div>
