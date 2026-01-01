@@ -1,48 +1,54 @@
-type Student = {
-  id: number;
-  name: string;
-  class: string;
-  section: string;
-  parentPhone: string;
-};
+export type StudentForTable = {
+  id: number
+  name: string
+  class: string
+  section: string
+  parentPhone: string
+}
 
 type StudentTableProps = {
-  students: Student[];
-  onView: (id: number) => void;
-};
+  students: StudentForTable[]
+  onEdit: (id: number) => void
+  onDelete: (id: number) => void
+}
 
-export const StudentTable = ({ students, onView }: StudentTableProps) => {
+export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) {
   return (
-    <div className="overflow-x-auto border rounded-md bg-white">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-100 text-gray-700 text-left">
-          <tr>
-            <th className="px-6 py-3">Name</th>
-            <th className="px-6 py-3">Class</th>
-            <th className="px-6 py-3">Section</th>
-            <th className="px-6 py-3">Parent&apos;s Phone</th>
-            <th className="px-6 py-3">Actions</th>
+    <table className="w-full border rounded overflow-hidden">
+      <thead>
+        <tr className="bg-gray-100 text-left">
+          <th className="p-3">Name</th>
+          <th className="p-3">Class</th>
+          <th className="p-3">Section</th>
+          <th className="p-3">Contact</th>
+          <th className="p-3">Actions</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {students.map((s) => (
+          <tr key={s.id} className="border-t">
+            <td className="p-3">{s.name}</td>
+            <td className="p-3">{s.class}</td>
+            <td className="p-3">{s.section}</td>
+            <td className="p-3">{s.parentPhone}</td>
+            <td className="p-3 space-x-3">
+              <button
+                onClick={() => onEdit(s.id)}
+                className="text-blue-600 hover:underline"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => onDelete(s.id)}
+                className="text-red-600 hover:underline"
+              >
+                Delete
+              </button>
+            </td>
           </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-200">
-          {students.map((student) => (
-            <tr key={student.id} className="hover:bg-gray-50">
-              <td className="px-6 py-4">{student.name}</td>
-              <td className="px-6 py-4">{student.class}</td>
-              <td className="px-6 py-4">{student.section}</td>
-              <td className="px-6 py-4">{student.parentPhone}</td>
-              <td className="px-6 py-4">
-                <button
-                  onClick={() => onView(student.id)}
-                  className="text-blue-600 hover:underline"
-                >
-                  View
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-};
+        ))}
+      </tbody>
+    </table>
+  )
+}
