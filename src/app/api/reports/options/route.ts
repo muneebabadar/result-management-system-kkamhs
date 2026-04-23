@@ -51,7 +51,7 @@ export async function GET(request: Request) {
 
     const cohortOptions = (cohorts || []).map((c: any) => ({
       id: c.id,
-      label: `${c.classes?.name ?? ''}${c.sections?.name ?? ''}`,
+      label: `${c.classes?.name ?? ''} - ${c.sections?.name ?? ''}`,
     }))
 
     // Student options (optional filter by cohort)

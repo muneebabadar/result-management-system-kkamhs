@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 
 // We removed the ": NextConfig" type annotation here to stop the error
 const nextConfig = {
+  experimental: {
+  serverComponentsExternalPackages: ['pdfkit'],
+},
   eslint: {
     // Warning: This allows production builds to successfully complete even if
     // your project has ESLint errors.

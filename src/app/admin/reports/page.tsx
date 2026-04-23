@@ -5,6 +5,17 @@ import { Calendar, ChevronDown, Download, FileText, Loader2 } from 'lucide-react
 import AdminHeader from '../components/adminHeader'
 
 type ReportType = 'individual' | 'class-wise' | 'annual'
+type TemplateType = 'preliminary' | 'annual_average' | 'rubric' | 'annual_summary'
+
+type ReportRequest = {
+  reportType: ReportType
+  template: TemplateType
+  classSectionId?: number
+  studentId?: number
+  examId?: number
+  startDate?: string
+  endDate?: string
+}
 
 type CohortOption = {
   id: number
@@ -98,13 +109,22 @@ export default function GenerateReports() {
     }
   }, [reportType])
 
-  const buildPayload = () => {
-    const payload: any = { reportType }
-    if (selectedClassSectionId) payload.classSectionId = Number(selectedClassSectionId)
-    if (selectedStudentId) payload.studentId = Number(selectedStudentId)
-    if (startDate) payload.startDate = startDate
-    if (endDate) payload.endDate = endDate
-    return payload
+  const resolveTemplate = (): TemplateType => {
+    if (reportType === 'individual') return 'annual_average'
+    if (reportType === 'class-wise') return 'rubric'
+    if (reportType === 'annual') return 'annual_summary'
+    return 'annual_average'
+  }
+
+  const buildPayload = (): ReportRequest => {
+    return {
+      reportType,
+      template: resolveTemplate(),
+      classSectionId: selectedClassSectionId ? Number(selectedClassSectionId) : undefined,
+      studentId: selectedStudentId ? Number(selectedStudentId) : undefined,
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+    }
   }
 
   const download = async (kind: 'pdf' | 'excel') => {
@@ -113,7 +133,7 @@ export default function GenerateReports() {
     setLoadingText(kind === 'pdf' ? 'Generating PDF...' : 'Generating Excel...')
 
     try {
-      // Optional: validate by generating JSON first (helps with better user errors)
+      // Validate first so users get clearer backend errors before file generation starts.
       const previewRes = await fetch('/api/reports/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
