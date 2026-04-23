@@ -27,11 +27,7 @@ export default function TeacherHeader() {
 
   const navLinks = [
     { name: 'Dashboard', href: '/teacher' },
-    { name: 'Classes', href: '/teacher' },
-    { name: 'Students', href: '#' },
-    { name: 'Results', href: '#' },
-    { name: 'Reports', href: '#' },
-    { name: 'Settings', href: '#' },
+    { name: 'Settings', href: '/teacher/settings' },
   ]
 
   return (
