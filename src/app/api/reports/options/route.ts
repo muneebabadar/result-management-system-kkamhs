@@ -1,3 +1,4 @@
+// /src/app/api/reports/options/route.ts
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -7,78 +8,54 @@ const supabase = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-async function getCurrentYear() {
-  const { data, error } = await supabase
-    .from('academic_years')
-    .select('id, name, starts_on, ends_on')
-    .eq('is_current', true)
-    .single()
-
-  if (error) return null
-  return data
-}
-
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url)
-    const classSectionId = searchParams.get('classSectionId')
-    const current = await getCurrentYear()
+    // Current academic year
+    const { data: year } = await supabase
+      .from('academic_years')
+      .select('id, name')
+      .eq('is_current', true)
+      .single()
 
-    if (!current) {
-      return NextResponse.json({ error: 'No current academic year found.' }, { status: 400 })
-    }
+    if (!year) return NextResponse.json({ error: 'No active academic year' }, { status: 400 })
 
-    // Cohorts with active enrollments this year
-    const { data: enrolls, error: eErr } = await supabase
-      .from('student_enrollments')
-      .select('class_section_id')
-      .eq('academic_year_id', current.id)
-      .eq('status', 'active')
-
-    if (eErr) return NextResponse.json({ error: eErr.message }, { status: 500 })
-
-    const cohortIds = Array.from(
-      new Set((enrolls || []).map((e: any) => e.class_section_id).filter(Boolean))
-    ) as number[]
-
-    const { data: cohorts, error: cErr } = await supabase
+    // Class sections — include level from classes so the frontend
+    // knows which exam term selector to render
+    const { data: sections } = await supabase
       .from('class_sections')
-      .select(`id, classes(name), sections(name)`)
-      .in('id', cohortIds.length ? cohortIds : [0])
-      .order('id', { ascending: true })
+      .select('id, class_id, section_id, classes(name, level), sections(name)')
+      .order('class_id')
 
-    if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 })
-
-    const cohortOptions = (cohorts || []).map((c: any) => ({
-      id: c.id,
-      label: `${c.classes?.name ?? ''} - ${c.sections?.name ?? ''}`,
+    const cohortOptions = (sections ?? []).map((cs: any) => ({
+      id:           cs.id as number,
+      label:        `${cs.classes?.name ?? ''} - ${cs.sections?.name ?? ''}`,
+      class_name:   cs.classes?.name   as string,
+      section_name: cs.sections?.name  as string,
+      level:        cs.classes?.level  as 'primary' | 'secondary' | 'high_school',
     }))
 
-    // Student options (optional filter by cohort)
-    let studentOptions: { id: number; full_name: string }[] = []
-    if (classSectionId) {
-      const csId = Number(classSectionId)
-      const { data: st, error: sErr } = await supabase
-        .from('student_enrollments')
-        .select(`student_id, students(full_name)`)
-        .eq('academic_year_id', current.id)
-        .eq('class_section_id', csId)
-        .eq('status', 'active')
-        .order('student_id', { ascending: true })
+    // Students per class section for the individual selector
+    const { data: enrollments } = await supabase
+      .from('student_enrollments')
+      .select('student_id, class_section_id, roll_number, students(full_name)')
+      .eq('academic_year_id', year.id)
+      .eq('status', 'active')
+      .order('roll_number')
 
-      if (sErr) return NextResponse.json({ error: sErr.message }, { status: 500 })
+    const studentOptions = (enrollments ?? []).map((e: any) => ({
+      id:               e.student_id       as number,
+      class_section_id: e.class_section_id as number,
+      label:            `${e.roll_number ? e.roll_number + ' — ' : ''}${e.students?.full_name ?? ''}`,
+    }))
 
-      studentOptions = (st || []).map((r: any) => ({
-        id: r.student_id,
-        full_name: r.students?.full_name ?? 'Unknown',
-      }))
-    }
-
-    return NextResponse.json(
-      { success: true, data: { currentYear: current, cohorts: cohortOptions, students: studentOptions } },
-      { status: 200 }
-    )
-  } catch {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({
+      success:        true,
+      academicYear:   year,
+      cohortOptions,
+      studentOptions,
+    })
+  } catch (err: any) {
+    console.error('Report options error:', err)
+    return NextResponse.json({ error: err?.message ?? 'Internal server error' }, { status: 500 })
   }
 }

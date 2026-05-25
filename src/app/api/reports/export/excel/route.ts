@@ -1,177 +1,433 @@
-// import { NextResponse } from 'next/server'
-// import ExcelJS from 'exceljs'
-
-// export async function POST(request: Request) {
-//   const payload = await request.json()
-
-//   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
-//   const res = await fetch(`${baseUrl}/api/reports/generate`, {
-//     method: 'POST',
-//     headers: { 'Content-Type': 'application/json' },
-//     body: JSON.stringify(payload),
-//     cache: 'no-store',
-//   })
-
-//   const json = await res.json()
-//   if (!res.ok) {
-//     return NextResponse.json({ error: json.error || 'Failed generating report' }, { status: 500 })
-//   }
-
-//   const data = json.data
-
-//   const wb = new ExcelJS.Workbook()
-//   const ws = wb.addWorksheet('Report')
-
-//   ws.addRow(['Khadija Kazi Ali Memorial High School'])
-//   ws.addRow(['Type', data.reportType])
-//   ws.addRow(['Academic Year', data.academicYear?.name ?? '—'])
-//   if (data.classLabel) ws.addRow(['Class', data.classLabel])
-//   if (data.student?.name) ws.addRow(['Student', data.student.name])
-//   ws.addRow([])
-
-//   ws.addRow(['Summary'])
-//   Object.entries(data.summary || {}).forEach(([k, v]) => ws.addRow([k, v ?? '—']))
-//   ws.addRow([])
-
-//   if (data.gradeDistribution) {
-//     ws.addRow(['Grade Distribution'])
-//     Object.entries(data.gradeDistribution).forEach(([k, v]) => ws.addRow([k, v]))
-//     ws.addRow([])
-//   }
-
-//   if (data.rows?.length) {
-//     ws.addRow(['Roll No', 'Student', 'Overall %', 'Grade', 'Result'])
-//     for (const r of data.rows) {
-//       ws.addRow([r.roll_number ?? '', r.name, r.overall_percentage ?? '', r.overall_grade ?? '', r.overall_result ?? ''])
-//     }
-//   }
-
-//   const buf = await wb.xlsx.writeBuffer()
-//   return new NextResponse(buf as any, {
-//     status: 200,
-//     headers: {
-//       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-//       'Content-Disposition': `attachment; filename="report.xlsx"`,
-//     },
-//   })
-// }
+// /src/app/api/reports/export/excel/route.ts
+//
+// Requires: npm install exceljs   (likely already installed)
 
 import { NextResponse } from 'next/server'
-import ExcelJS from 'exceljs'
+import ExcelJS          from 'exceljs'
 
-export async function POST(req: Request) {
-  try {
-    const body = await req.json()
+// ─── Shared Helpers ───────────────────────────────────────────────────────────
 
-    const origin = new URL(req.url).origin
-    const genRes = await fetch(`${origin}/api/reports/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      cache: 'no-store',
+const SCHOOL = 'Khadija Kazi Ali Memorial Higher Secondary School'
+
+type WS = ExcelJS.Worksheet
+
+function hdrStyle(bold = false): Partial<ExcelJS.Style> {
+  return {
+    font:      { bold, size: 11 },
+    fill:      { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8E8E8' } },
+    border:    allBorders(),
+    alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
+  }
+}
+
+function cellStyle(bold = false, bg?: string): Partial<ExcelJS.Style> {
+  return {
+    font:      { bold, size: 10 },
+    fill:      bg ? { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } } : { type: 'pattern', pattern: 'none' },
+    border:    allBorders(),
+    alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
+  }
+}
+
+function allBorders(): Partial<ExcelJS.Borders> {
+  const s = { style: 'thin' as ExcelJS.BorderStyle }
+  return { top: s, left: s, bottom: s, right: s }
+}
+
+function mergeWrite(ws: WS, range: string, value: string, style: Partial<ExcelJS.Style>) {
+  ws.mergeCells(range)
+  const cell    = ws.getCell(range.split(':')[0])
+  cell.value    = value
+  cell.style    = style
+}
+
+function studentInfoRows(ws: WS, vm: any, startRow: number): number {
+  let r = startRow
+  ws.getRow(r).height = 14
+  const s = vm.student
+  const info: [string, string][] = [
+    ['G.R. No.', s.gr_no || ''],
+    ['Student Name', s.full_name],
+    ['Father\'s Name', s.father_name ?? ''],
+    ['Class / Section', `${s.class_name} — ${s.section_name}`],
+  ]
+  for (const [label, value] of info) {
+    ws.mergeCells(`A${r}:B${r}`)
+    ws.getCell(`A${r}`).value = label
+    ws.getCell(`A${r}`).font  = { bold: true, size: 10 }
+    ws.mergeCells(`C${r}:F${r}`)
+    ws.getCell(`C${r}`).value = value
+    ws.getCell(`C${r}`).font  = { size: 10 }
+    r++
+  }
+  return r + 1
+}
+
+// ─── High School Sheet ────────────────────────────────────────────────────────
+
+function writeHighSchool(ws: WS, vm: any) {
+  const isPatron = vm.audience === 'patron'
+  ws.columns = [
+    { key: 'subject',  width: 26 },
+    { key: 'max',      width: 14 },
+    { key: 'obtained', width: 14 },
+    { key: 'pct',      width: 12 },
+    { key: 'grade',    width: 10 },
+  ]
+
+  // Title rows
+  ws.mergeCells('A1:E1'); const t1 = ws.getCell('A1')
+  t1.value = SCHOOL; t1.font = { bold: true, size: 12 }; t1.alignment = { horizontal: 'center' }
+
+  ws.mergeCells('A2:E2'); const t2 = ws.getCell('A2')
+  t2.value = isPatron ? `Patron Report — ${vm.academicYear}` : vm.examName
+  t2.font  = { bold: false, size: 11 }; t2.alignment = { horizontal: 'center' }
+
+  let r = studentInfoRows(ws, vm, 4)
+
+  // Column headers
+  const hdrs = ['Subject', 'Maximum Marks', 'Marks Obtained', 'Percentage', 'Grade']
+  hdrs.forEach((h, i) => {
+    const cell = ws.getCell(r, i + 1)
+    cell.value = h; cell.style = hdrStyle(true)
+  })
+  r++
+
+  // Subject rows
+  for (const row of vm.rows) {
+    const vals = [
+      row.subject,
+      row.max_marks,
+      row.is_absent ? 'Ab' : (row.obtained_marks ?? '—'),
+      row.percentage ?? '—',
+      row.grade,
+    ]
+    vals.forEach((v, i) => {
+      const cell = ws.getCell(r, i + 1)
+      cell.value = v; cell.style = cellStyle(false)
+      if (i === 0) cell.alignment = { horizontal: 'left', vertical: 'middle' }
     })
+    r++
+  }
 
-    const genJson = await genRes.json().catch(() => ({}))
-    if (!genRes.ok) return NextResponse.json({ error: genJson.error || 'Generate failed' }, { status: 400 })
+  // Behaviour rows (student report only)
+  if (!isPatron && vm.behaviour) {
+    for (const b of vm.behaviour) {
+      const vals = [b.title, b.max, b.obtained ?? '—', b.percentage ?? '—', b.grade]
+      vals.forEach((v, i) => {
+        const cell = ws.getCell(r, i + 1)
+        cell.value = v; cell.style = cellStyle(false)
+        if (i === 0) cell.alignment = { horizontal: 'left', vertical: 'middle' }
+      })
+      r++
+    }
+  }
 
-    const vm = genJson.data
+  // Grand total
+  const gt = vm.grand_total
+  ;['Grand Total', gt.max, gt.obtained, gt.percentage ?? '—', gt.grade].forEach((v, i) => {
+    const cell = ws.getCell(r, i + 1)
+    cell.value = v; cell.style = hdrStyle(true)
+    if (i === 0) cell.alignment = { horizontal: 'left', vertical: 'middle' }
+  })
+  r += 2
+
+  // Attendance
+  ws.mergeCells(`A${r}:E${r}`)
+  ws.getCell(`A${r}`).value = `Attendance — Total: ${vm.attendance?.total_days ?? '___'}   Present: ${vm.attendance?.days_present ?? '___'}`
+  ws.getCell(`A${r}`).font  = { size: 10 }
+  r++
+
+  // Remarks for patron
+  if (isPatron) {
+    r++
+    ws.mergeCells(`A${r}:E${r}`)
+    ws.getCell(`A${r}`).value = 'Remarks:'
+    ws.getCell(`A${r}`).font  = { bold: true, size: 10 }
+    r++
+    ws.mergeCells(`A${r}:E${r}`)
+    ws.getCell(`A${r}`).value = ''
+    ws.getCell(`A${r}`).border = { bottom: { style: 'thin' } }
+    r++
+  }
+}
+
+// ─── Secondary Quarterly Sheet ────────────────────────────────────────────────
+
+function writeSecondaryQuarterly(ws: WS, vm: any) {
+  ws.columns = [
+    { key: 'subject',  width: 26 },
+    { key: 'max',      width: 14 },
+    { key: 'obtained', width: 14 },
+    { key: 'pct',      width: 12 },
+    { key: 'grade',    width: 10 },
+  ]
+
+  ws.mergeCells('A1:E1')
+  ws.getCell('A1').value = SCHOOL
+  ws.getCell('A1').font  = { bold: true, size: 12 }
+  ws.getCell('A1').alignment = { horizontal: 'center' }
+
+  ws.mergeCells('A2:E2')
+  ws.getCell('A2').value = vm.examName
+  ws.getCell('A2').font  = { size: 11 }
+  ws.getCell('A2').alignment = { horizontal: 'center' }
+
+  let r = studentInfoRows(ws, vm, 4)
+
+  ;['Subject','Maximum Marks','Marks Obtained','Percentage','Grade'].forEach((h, i) => {
+    const cell = ws.getCell(r, i + 1); cell.value = h; cell.style = hdrStyle(true)
+  })
+  r++
+
+  for (const row of vm.rows) {
+    ;[row.subject, row.max_marks, row.is_absent ? 'Ab' : (row.obtained_marks ?? '—'), row.percentage ?? '—', row.grade].forEach((v, i) => {
+      const cell = ws.getCell(r, i + 1); cell.value = v; cell.style = cellStyle()
+      if (i === 0) cell.alignment = { horizontal: 'left', vertical: 'middle' }
+    })
+    r++
+  }
+
+  const gt = vm.grand_total
+  ;['Grand Total', gt.max, gt.obtained, gt.percentage ?? '—', gt.grade].forEach((v, i) => {
+    const cell = ws.getCell(r, i + 1); cell.value = v; cell.style = hdrStyle(true)
+    if (i === 0) cell.alignment = { horizontal: 'left', vertical: 'middle' }
+  })
+}
+
+// ─── Secondary Term / Annual Sheet ───────────────────────────────────────────
+
+function writeSecondaryComplex(ws: WS, vm: any) {
+  const isAnnual = vm.template === 'secondary_annual'
+
+  ws.columns = [
+    { key: 'subject',    width: 20 },
+    { key: 'component',  width: 30 },
+    { key: 'max',        width: 13 },
+    { key: 'obtained',   width: 13 },
+    { key: 'percentage', width: 12 },
+    { key: 'grade',      width: 10 },
+  ]
+
+  ws.mergeCells('A1:F1')
+  ws.getCell('A1').value = SCHOOL; ws.getCell('A1').font = { bold: true, size: 12 }; ws.getCell('A1').alignment = { horizontal: 'center' }
+
+  ws.mergeCells('A2:F2')
+  ws.getCell('A2').value = vm.examName; ws.getCell('A2').font = { size: 11 }; ws.getCell('A2').alignment = { horizontal: 'center' }
+
+  let r = studentInfoRows(ws, vm, 4)
+
+  ;['Subjects','Components','Max. Marks','Marks Obtained','Percentage','Grade'].forEach((h, i) => {
+    const cell = ws.getCell(r, i + 1); cell.value = h; cell.style = hdrStyle(true)
+  })
+  r++
+
+  // Subject rows with merged subject cell
+  for (const row of vm.rows) {
+    const startRow = r
+    const compCount = row.components.length
+
+    for (let ci = 0; ci < compCount; ci++) {
+      const comp = row.components[ci]
+
+      if (ci === 0 && compCount > 1) {
+        ws.mergeCells(`A${startRow}:A${startRow + compCount - 1}`)
+      }
+      const subjectCell = ws.getCell(startRow, 1)
+      subjectCell.value     = row.subject
+      subjectCell.style     = cellStyle(true)
+      subjectCell.alignment = { horizontal: 'left', vertical: 'middle' }
+
+      const compCell = ws.getCell(r, 2)
+      compCell.value = comp.label
+      compCell.style = comp.is_computed ? cellStyle(true, 'FFF4F4F4') : cellStyle(false)
+      compCell.alignment = { horizontal: 'left', vertical: 'middle' }
+
+      ws.getCell(r, 3).value = comp.max;     ws.getCell(r, 3).style = comp.is_computed ? cellStyle(true, 'FFF4F4F4') : cellStyle()
+      ws.getCell(r, 4).value = comp.obtained !== null ? comp.obtained : '—'; ws.getCell(r, 4).style = comp.is_computed ? cellStyle(true, 'FFF4F4F4') : cellStyle()
+
+      if (ci === 0) {
+        if (compCount > 1) {
+          ws.mergeCells(`E${startRow}:E${startRow + compCount - 1}`)
+          ws.mergeCells(`F${startRow}:F${startRow + compCount - 1}`)
+        }
+        ws.getCell(startRow, 5).value = row.percentage ?? '—'
+        ws.getCell(startRow, 5).style = cellStyle()
+        ws.getCell(startRow, 5).alignment = { horizontal: 'center', vertical: 'middle' }
+        ws.getCell(startRow, 6).value = row.grade
+        ws.getCell(startRow, 6).style = cellStyle()
+        ws.getCell(startRow, 6).alignment = { horizontal: 'center', vertical: 'middle' }
+      }
+
+      r++
+    }
+  }
+
+  // Behaviour rows
+  for (const b of vm.behaviour) {
+    ;[b.title, b.label, b.max, b.obtained ?? '—', b.percentage ?? '—', b.grade].forEach((v, i) => {
+      const cell = ws.getCell(r, i + 1); cell.value = v; cell.style = cellStyle()
+      if (i === 0) { cell.font = { bold: true, size: 10 }; cell.alignment = { horizontal: 'left', vertical: 'middle' } }
+      if (i === 1) cell.alignment = { horizontal: 'left', vertical: 'middle' }
+    })
+    r++
+  }
+
+  // Total row
+  const totalLabel = isAnnual ? 'Total Annual Max. Marks' : 'Total Max. Marks'
+  ws.mergeCells(`A${r}:B${r}`)
+  ws.getCell(`A${r}`).value = totalLabel; ws.getCell(`A${r}`).style = hdrStyle(true); ws.getCell(`A${r}`).alignment = { horizontal: 'left', vertical: 'middle' }
+  ;[vm.total_max_marks, vm.total_obtained ?? '—', vm.overall_percentage ?? '—', vm.overall_grade ?? '—'].forEach((v, i) => {
+    const cell = ws.getCell(r, i + 3); cell.value = v; cell.style = hdrStyle(true)
+  })
+  r += 2
+
+  ws.mergeCells(`A${r}:F${r}`)
+  ws.getCell(`A${r}`).value = `Attendance — Total: ${vm.attendance?.total_days ?? '___'}   Present: ${vm.attendance?.days_present ?? '___'}`
+  ws.getCell(`A${r}`).font  = { size: 10 }
+}
+
+// ─── Primary Rubric Sheet ─────────────────────────────────────────────────────
+
+function writePrimaryRubric(ws: WS, vm: any) {
+  ws.columns = [{ key: 'a', width: 34 }, { key: 'b', width: 10 }, { key: 'c', width: 2 }, { key: 'd', width: 34 }, { key: 'e', width: 10 }]
+
+  ws.mergeCells('A1:E1'); ws.getCell('A1').value = SCHOOL; ws.getCell('A1').font = { bold: true, size: 12 }; ws.getCell('A1').alignment = { horizontal: 'center' }
+  ws.mergeCells('A2:E2'); ws.getCell('A2').value = vm.examName; ws.getCell('A2').font = { size: 11 }; ws.getCell('A2').alignment = { horizontal: 'center' }
+  ws.mergeCells('A3:E3'); ws.getCell('A3').value = `${vm.student.full_name}  —  ${vm.student.class_name} ${vm.student.section_name}`; ws.getCell('A3').font = { size: 10 }; ws.getCell('A3').alignment = { horizontal: 'center' }
+
+  let r = 5
+  const groups = Object.entries(vm.skill_groups ?? {})
+  const half   = Math.ceil(groups.length / 2)
+  const leftGroups  = groups.slice(0, half)
+  const rightGroups = groups.slice(half)
+
+  const maxRows = Math.max(
+    leftGroups.reduce((s, [, skills]) => s + (skills as any[]).length + 1, 0),
+    rightGroups.reduce((s, [, skills]) => s + (skills as any[]).length + 1, 0)
+  )
+
+  function writeGroup(groups: any[], colOffset: number, startRow: number) {
+    let row = startRow
+    for (const [groupName, skills] of groups) {
+      ws.getCell(row, colOffset).value     = groupName
+      ws.getCell(row, colOffset).font      = { bold: true, size: 10 }
+      ws.getCell(row, colOffset).fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8E8E8' } }
+      ws.getCell(row, colOffset + 1).fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8E8E8' } }
+      row++
+      for (const s of (skills as any[])) {
+        ws.getCell(row, colOffset).value = s.text; ws.getCell(row, colOffset).font = { size: 10 }
+        ws.getCell(row, colOffset + 1).value = s.grade; ws.getCell(row, colOffset + 1).font = { bold: true, size: 10 }; ws.getCell(row, colOffset + 1).alignment = { horizontal: 'center' }
+        row++
+      }
+    }
+  }
+
+  writeGroup(leftGroups,  1, r)
+  writeGroup(rightGroups, 4, r)
+  r += maxRows + 2
+
+  ws.mergeCells(`A${r}:E${r}`)
+  ws.getCell(`A${r}`).value = `Attendance — Total: ${vm.attendance?.total_days ?? '___'}   Present: ${vm.attendance?.days_present ?? '___'}`
+}
+
+// ─── Primary Patron Sheet ─────────────────────────────────────────────────────
+
+function writePrimaryPatron(ws: WS, vm: any) {
+  ws.columns = [{ key: 'a', width: 38 }, { key: 'b', width: 12 }]
+
+  ws.mergeCells('A1:B1'); ws.getCell('A1').value = SCHOOL; ws.getCell('A1').font = { bold: true, size: 12 }; ws.getCell('A1').alignment = { horizontal: 'center' }
+  ws.mergeCells('A2:B2'); ws.getCell('A2').value = 'Patron Report'; ws.getCell('A2').font = { size: 11 }; ws.getCell('A2').alignment = { horizontal: 'center' }
+  ws.mergeCells('A3:B3'); ws.getCell('A3').value = `${vm.student.full_name}  —  ${vm.student.class_name}`; ws.getCell('A3').font = { size: 10 }; ws.getCell('A3').alignment = { horizontal: 'center' }
+
+  let r = 5
+  ;['Title','Grade'].forEach((h, i) => {
+    const c = ws.getCell(r, i + 1); c.value = h; c.style = hdrStyle(true)
+    if (i === 0) c.alignment = { horizontal: 'left' }
+  })
+  r++
+
+  for (const s of (vm.patron_skills ?? [])) {
+    ws.getCell(r, 1).value = s.title; ws.getCell(r, 1).style = cellStyle(); ws.getCell(r, 1).alignment = { horizontal: 'left' }
+    ws.getCell(r, 2).value = s.grade; ws.getCell(r, 2).style = cellStyle(true)
+    r++
+  }
+
+  r += 2
+  ws.mergeCells(`A${r}:B${r}`)
+  ws.getCell(`A${r}`).value = 'Remarks:'; ws.getCell(`A${r}`).font = { bold: true, size: 10 }
+  r++
+  ws.mergeCells(`A${r}:B${r}`)
+  ws.getCell(`A${r}`).border = { bottom: { style: 'thin' } }
+  r += 2
+  ws.mergeCells(`A${r}:B${r}`)
+  ws.getCell(`A${r}`).value = 'Conclusion:'; ws.getCell(`A${r}`).font = { bold: true, size: 10 }
+  r++
+  ws.mergeCells(`A${r}:B${r}`)
+  ws.getCell(`A${r}`).border = { bottom: { style: 'thin' } }
+}
+
+// ─── Dispatch to Sheet Writer ─────────────────────────────────────────────────
+
+function writeSheet(ws: WS, vm: any) {
+  switch (vm.template) {
+    case 'high_school_term':
+    case 'high_school_patron':    writeHighSchool(ws, vm);          break
+    case 'secondary_quarterly':   writeSecondaryQuarterly(ws, vm);  break
+    case 'secondary_term':
+    case 'secondary_annual':      writeSecondaryComplex(ws, vm);    break
+    case 'primary_rubric':        writePrimaryRubric(ws, vm);       break
+    case 'primary_patron':        writePrimaryPatron(ws, vm);       break
+  }
+}
+
+// ─── Handler ──────────────────────────────────────────────────────────────────
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+
+    const origin = new URL(request.url).origin
+    const genRes = await fetch(`${origin}/api/reports/generate`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    })
+    const genJson = await genRes.json()
+    if (!genJson.success) return NextResponse.json({ error: genJson.error }, { status: 400 })
+
+    const reports: any[] = genJson.data?.reports ?? [genJson.data]
 
     const wb = new ExcelJS.Workbook()
-    const ws = wb.addWorksheet('Report')
+    wb.creator  = SCHOOL
+    wb.created  = new Date()
 
-    if (vm.template === 'preliminary') {
-      ws.addRow([vm.examName, 'Result Card'])
-      ws.addRow([])
-      ws.addRow(['Name', vm.student.full_name])
-      ws.addRow(['Class', vm.student.class_name ?? '', 'Section', vm.student.section_name ?? ''])
-      ws.addRow(['Roll', vm.student.roll_number ?? ''])
-      ws.addRow([])
+    for (const vm of reports) {
+      const sheetName = reports.length === 1
+        ? 'Report'
+        : vm.student.full_name.substring(0, 31).replace(/[*?:/\\[\]]/g, '')
 
-      ws.addRow(['Subject', 'Max', 'Obtained', '%', 'Grade'])
-      for (const r of vm.rows || []) {
-        ws.addRow([r.subject, r.max, r.obtained ?? '', r.pct ?? '', r.grade ?? ''])
-      }
-
-      ws.addRow([])
-      ws.addRow(['Total Max', vm.totals.maxTotal])
-      ws.addRow(['Total Obtained', vm.totals.obtainedTotal])
-      ws.addRow(['Overall %', vm.totals.pct ?? ''])
-      ws.addRow(['Overall Grade', vm.totals.grade ?? ''])
-    } else if (vm.template === 'annual_average') {
-      ws.addRow([vm.examName, 'Annual Average'])
-      ws.addRow([])
-      ws.addRow(['Name', vm.student.full_name])
-      ws.addRow(['Class', vm.student.class_name ?? '', 'Section', vm.student.section_name ?? ''])
-      ws.addRow(['Roll', vm.student.roll_number ?? ''])
-      ws.addRow([])
-
-      for (const b of vm.blocks || []) {
-        ws.addRow([b.subject, '', '', 'Pct', b.pct ?? '', 'Grade', b.grade ?? ''])
-        ws.addRow(['Component', 'Max', 'Obtained'])
-        for (const c of b.components || []) {
-          ws.addRow([c.label, c.max, c.is_absent ? 'Ab' : c.obtained ?? ''])
-        }
-        ws.addRow([])
-      }
-
-      ws.addRow(['Overall %', vm.overall?.pct ?? '', 'Overall Grade', vm.overall?.grade ?? ''])
-    } else if (vm.template === 'rubric') {
-      const rubric = vm.rubric || []
-      const columns = ['Roll', 'Student', ...rubric.map((skill: any) => skill.skill_text)]
-
-      ws.addRow([vm.examName, 'Rubric Report'])
-      ws.addRow(['Class', vm.cohortLabel ?? ''])
-      ws.addRow([])
-      ws.addRow(columns)
-
-      for (const row of vm.students || []) {
-        ws.addRow([
-          row.student?.roll_number ?? '',
-          row.student?.full_name ?? '',
-          ...rubric.map((skill: any) => row.grades?.[String(skill.id)] ?? ''),
-        ])
-      }
-    } else if (vm.template === 'annual_summary') {
-      ws.addRow(['Academic Year', vm.academicYear?.name ?? ''])
-      ws.addRow([])
-      ws.addRow(['Total Students', vm.summary?.totalStudents ?? 0])
-      ws.addRow(['Average Score', vm.summary?.averageScore ?? ''])
-      ws.addRow(['Pass Count', vm.summary?.passCount ?? 0])
-      ws.addRow(['Fail Count', vm.summary?.failCount ?? 0])
-      ws.addRow([])
-
-      ws.addRow(['Grade', 'Count'])
-      for (const [grade, count] of Object.entries(vm.gradeDistribution ?? {})) {
-        ws.addRow([grade, count])
-      }
-
-      ws.addRow([])
-      ws.addRow(['Class/Section', 'Total Students', 'Average Score', 'Pass Count', 'Fail Count'])
-      for (const cohort of vm.cohorts || []) {
-        ws.addRow([
-          cohort.label,
-          cohort.totalStudents ?? 0,
-          cohort.averageScore ?? '',
-          cohort.passCount ?? 0,
-          cohort.failCount ?? 0,
-        ])
-      }
-    } else {
-      return NextResponse.json({ error: 'Excel export not implemented for this template.' }, { status: 400 })
+      const ws = wb.addWorksheet(sheetName, {
+        pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+      })
+      writeSheet(ws, vm)
     }
 
-    ws.columns.forEach((c) => (c.width = 22))
+    const buffer   = await wb.xlsx.writeBuffer()
+    const firstName = reports[0]?.student?.full_name?.replace(/\s+/g, '_') ?? 'report'
+    const filename  = reports.length > 1
+      ? `${reports[0]?.student?.class_name?.replace(/\s+/g, '_')}_reports.xlsx`
+      : `${firstName}_report.xlsx`
 
-    const buffer = await wb.xlsx.writeBuffer()
-
-    return new NextResponse(Buffer.from(buffer), {
-      status: 200,
+    return new Response(buffer, {
       headers: {
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': 'attachment; filename="report.xlsx"',
+        'Content-Type':        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="${filename}"`,
       },
     })
-  } catch {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+
+  } catch (err: any) {
+    console.error('Excel export error:', err)
+    return NextResponse.json({ error: err?.message ?? 'Excel generation failed' }, { status: 500 })
   }
 }
