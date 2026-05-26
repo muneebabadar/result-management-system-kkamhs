@@ -287,7 +287,7 @@ async function generateSecondaryQuarterly(
   const totalPct      = totalMax > 0 ? calcPct(totalObtained, totalMax) : null
 
   return {
-    template:    'secondary_quarterly',
+    template:    req.audience === 'patron' ? 'secondary_quarterly_patron' : 'secondary_quarterly',
     audience:    req.audience,
     academicYear:year.name,
     examName:    exam.name,
@@ -398,7 +398,7 @@ async function generateSecondaryTerm(
   const overallPct        = calcPct(totalObtained, totalMax)
 
   return {
-    template:         'secondary_term',
+    template:         req.audience === 'patron' ? 'secondary_term_patron' : 'secondary_term',
     audience:         req.audience,
     academicYear:     year.name,
     examName:         `Progress Report (${termLabel} Semester) ${year.name}`,
@@ -541,7 +541,7 @@ async function generateSecondaryAnnual(
   const totalMax = rows.length * annualMax + 100
 
   return {
-    template:          'secondary_annual',
+    template:          req.audience === 'patron' ? 'secondary_annual_patron' : 'secondary_annual',
     audience:          req.audience,
     academicYear:      year.name,
     examName:          `Progress Report (Annual Average) ${year.name}`,

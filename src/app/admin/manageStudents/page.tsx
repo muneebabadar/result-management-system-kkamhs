@@ -1,66 +1,66 @@
 'use client'
+// /src/app/admin/manageStudents/page.tsx
 
 import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { StudentTable, StudentForTable } from '../components/studentTable'
 import { StudentFilter } from '../components/studentFilter'
 import { Button } from '../components/ui/button'
-import { useSearchParams } from 'next/navigation'
 
-type StudentFromDB = {
-  id: number
-  full_name: string
-  class_id: number
-  section_id: number
-  contact_number: string | null
+type Enrollment = {
+  roll_number:    string | null
+  class_id:       number
+  section_id:     number
+  class_section_id: number | null
+  classes:  { id: number; name: string } | null
+  sections: { id: number; name: string } | null
 }
 
-type Class = { id: number; name: string }
+type StudentFromDB = {
+  id:                  number
+  full_name:           string
+  gr_no:               string | null
+  contact_number:      string | null
+  status:              boolean
+  student_enrollments: Enrollment[]
+}
+
+type Class   = { id: number; name: string }
 type Section = { id: number; name: string }
 
 export default function ManageStudentsPage() {
   const router = useRouter()
 
   const [rawStudents, setRawStudents] = useState<StudentFromDB[]>([])
-  const [students, setStudents] = useState<StudentForTable[]>([])
-  const [classes, setClasses] = useState<Class[]>([])
-  const [sections, setSections] = useState<Section[]>([])
+  const [students,    setStudents]    = useState<StudentForTable[]>([])
+  const [classes,     setClasses]     = useState<Class[]>([])
+  const [sections,    setSections]    = useState<Section[]>([])
+  const [loading,     setLoading]     = useState(true)
+  const [error,       setError]       = useState('')
 
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [filters, setFilters] = useState({ name: '', classId: '', sectionId: '' })
 
-  const [filters, setFilters] = useState({
-    name: '',
-    classId: '',
-    sectionId: '',
-  })
+  const searchParams = useSearchParams()
+  const refreshKey   = searchParams.get('refresh')
 
-const searchParams = useSearchParams()
-const refreshKey = searchParams.get('refresh')
-
-  /* ===============================
-     Fetch data
-  ================================ */
+  /* ── Fetch ── */
   const fetchAll = async () => {
     setLoading(true)
+    setError('')
     try {
       const [s, c, sec] = await Promise.all([
-        fetch('/api/students', { cache: 'no-store' }),
-        fetch('/api/classes'),
-        fetch('/api/sections'),
+        fetch('/api/students',  { cache: 'no-store' }),
+        fetch('/api/classes',   { cache: 'no-store' }),
+        fetch('/api/sections',  { cache: 'no-store' }),
       ])
+
       const studentsJson = await s.json()
-const classesJson = await c.json()
-const sectionsJson = await sec.json()
+      const classesJson  = await c.json()
+      const sectionsJson = await sec.json()
 
-setRawStudents(Array.isArray(studentsJson) ? studentsJson : studentsJson.data ?? [])
-setClasses(Array.isArray(classesJson) ? classesJson : classesJson.data ?? [])
-setSections(Array.isArray(sectionsJson) ? sectionsJson : sectionsJson.data ?? [])
-
-
-      // setRawStudents((await s.json()).data || [])
-      // setClasses((await c.json()).data || [])
-      // setSections((await sec.json()).data || [])
+      setRawStudents(Array.isArray(studentsJson) ? studentsJson : studentsJson.data ?? [])
+      setClasses(Array.isArray(classesJson)      ? classesJson  : classesJson.data  ?? [])
+      setSections(Array.isArray(sectionsJson)    ? sectionsJson : sectionsJson.data ?? [])
     } catch {
       setError('Failed to load students')
     } finally {
@@ -68,62 +68,40 @@ setSections(Array.isArray(sectionsJson) ? sectionsJson : sectionsJson.data ?? []
     }
   }
 
-  useEffect(() => {
-    fetchAll()
-  }, [refreshKey])
+  useEffect(() => { fetchAll() }, [refreshKey])
 
-  /* ===============================
-     Maps
-  ================================ */
-  const classMap = useMemo(
-    () => Object.fromEntries(classes.map(c => [c.id, c.name])),
-    [classes]
-  )
-
-  const sectionMap = useMemo(
-    () => Object.fromEntries(sections.map(s => [s.id, s.name])),
-    [sections]
-  )
-
+  /* ── Map raw → display ── */
   useEffect(() => {
     setStudents(
-      rawStudents.map(s => ({
-        id: s.id,
-        name: s.full_name,
-        class: classMap[s.class_id] || '—',
-        section: sectionMap[s.section_id] || '—',
-        parentPhone: s.contact_number ?? '',
-      }))
+      rawStudents.map(s => {
+        const enroll = s.student_enrollments?.[0]
+        return {
+          id:          s.id,
+          name:        s.full_name,
+          class:       enroll?.classes?.name  ?? '—',
+          section:     enroll?.sections?.name ?? '—',
+          parentPhone: s.contact_number ?? '',
+        }
+      })
     )
-  }, [rawStudents, classMap, sectionMap])
+  }, [rawStudents])
 
-  /* ===============================
-     Filter handler
-  ================================ */
-  const handleFilterChange = (
-    key: 'name' | 'classId' | 'sectionId',
-    value: string
-  ) => {
+  /* ── Filter ── */
+  const handleFilterChange = (key: 'name' | 'classId' | 'sectionId', value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }))
   }
 
   const filteredStudents = useMemo(() => {
-    return students.filter(s => {
-      return (
-        s.name.toLowerCase().includes(filters.name.toLowerCase()) &&
-        (!filters.classId || s.class === filters.classId) &&
-        (!filters.sectionId || s.section === filters.sectionId)
-      )
-    })
+    return students.filter(s =>
+      s.name.toLowerCase().includes(filters.name.toLowerCase()) &&
+      (!filters.classId   || s.class   === filters.classId)    &&
+      (!filters.sectionId || s.section === filters.sectionId)
+    )
   }, [students, filters])
 
-  /* ===============================
-     Actions
-  ================================ */
+  /* ── Actions ── */
   const handleEdit = (id: number) =>
     router.push(`/admin/manageStudents/editStudent/${id}`)
-    // router.push('/admin/manageStudents?refresh=1')
-
 
   const handleDelete = async (id: number) => {
     if (!confirm('Delete this student?')) return
@@ -131,9 +109,7 @@ setSections(Array.isArray(sectionsJson) ? sectionsJson : sectionsJson.data ?? []
     fetchAll()
   }
 
-  /* ===============================
-     Render
-  ================================ */
+  /* ── Render ── */
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
@@ -141,15 +117,14 @@ setSections(Array.isArray(sectionsJson) ? sectionsJson : sectionsJson.data ?? []
         <Button label="Add Student" href="/admin/manageStudents/addStudent" />
       </div>
 
-      {/* <StudentFilter onFilterChange={handleFilterChange} /> */}
       <StudentFilter
-      classes={classes}
-      sections={sections}
-      onFilterChange={handleFilterChange}
-    />
+        classes={classes}
+        sections={sections}
+        onFilterChange={handleFilterChange}
+      />
 
       {loading && <p>Loading students...</p>}
-      {error && <p className="text-red-600">{error}</p>}
+      {error   && <p className="text-red-600">{error}</p>}
 
       {!loading && !error && (
         <StudentTable

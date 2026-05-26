@@ -403,6 +403,111 @@ function htmlPrimaryPatron(vm: any): string {
   </div>`
 }
 
+// ─── Secondary Patron (quarterly / term / annual — simplified one-line-per-subject) ──
+
+function htmlSecondaryPatron(vm: any): string {
+  // For term/annual the data shape uses `rows[].components` (complex).
+  // We flatten to just the final total component per subject so the
+  // patron sees one clean row per subject, identical to the quarterly layout.
+  const isSimple = vm.template === 'secondary_quarterly_patron'
+
+  const rows = vm.rows.map((r: any) => {
+    let obtained: number | null
+    let maxMarks: number
+    let pct: number | null
+    let grade: string
+
+    if (isSimple) {
+      obtained = r.obtained_marks
+      maxMarks = r.max_marks
+      pct      = r.percentage
+      grade    = r.grade
+    } else {
+      // Last component is always the term/annual total
+      const last = r.components[r.components.length - 1]
+      obtained   = last.obtained
+      maxMarks   = last.max
+      pct        = r.percentage
+      grade      = r.grade
+    }
+
+    return `
+    <tr>
+      <td class="left">${r.subject}</td>
+      <td>${maxMarks}</td>
+      <td>${obtained !== null ? obtained : '—'}</td>
+      <td>${pct !== null ? pct : '—'}</td>
+      <td>${grade}</td>
+    </tr>`
+  }).join('')
+
+  // Grand total row
+  let grandMax: number, grandObtained: number | null, grandPct: number | null, grandGrade: string
+  if (isSimple) {
+    grandMax      = vm.grand_total.max
+    grandObtained = vm.grand_total.obtained
+    grandPct      = vm.grand_total.percentage
+    grandGrade    = vm.grand_total.grade
+  } else {
+    grandMax      = vm.total_max_marks
+    grandObtained = vm.total_obtained ?? null
+    grandPct      = vm.overall_percentage ?? null
+    grandGrade    = vm.overall_grade ?? '—'
+  }
+
+  // Derive exam subtitle from template type
+  const subtitleMap: Record<string, string> = {
+    secondary_quarterly_patron: vm.examName,
+    secondary_term_patron:      vm.examName,
+    secondary_annual_patron:    `Progress Report (Annual Average) ${vm.academicYear}`,
+  }
+  const subtitle = subtitleMap[vm.template] ?? vm.examName
+
+  return `
+  <div class="page">
+    ${header(vm, subtitle)}
+    <div class="info-block">
+      <div class="info-row">
+        <div class="info-pair"><span class="lbl">G.R. No.:</span><span>${vm.student.gr_no || '____'}</span></div>
+        <div class="info-pair"><span class="lbl">Roll No.:</span><span>${vm.student.roll_number || '____'}</span></div>
+      </div>
+      <div class="info-row">
+        <div class="info-pair"><span class="lbl">Student Name:</span><span>${vm.student.full_name}</span></div>
+        <div class="info-pair"><span class="lbl">Class:</span><span>${vm.student.class_name}</span></div>
+      </div>
+      <div class="info-row">
+        <div class="info-pair"><span class="lbl">Father's Name:</span><span>${vm.student.father_name}</span></div>
+        <div class="info-pair"><span class="lbl">Section:</span><span>${vm.student.section_name}</span></div>
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th class="left">Subject</th>
+          <th>Maximum Marks</th>
+          <th>Marks Obtained</th>
+          <th>Percentage</th>
+          <th>Grade</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+        <tr class="total-row">
+          <td class="left">Grand Total</td>
+          <td>${grandMax}</td>
+          <td>${grandObtained !== null ? grandObtained : '—'}</td>
+          <td>${grandPct !== null ? grandPct : '—'}</td>
+          <td>${grandGrade}</td>
+        </tr>
+      </tbody>
+    </table>
+    ${vm.attendance ? attendance(vm.attendance) : ''}
+    <div class="remarks-field"><strong>Remarks:</strong><div class="underline">&nbsp;</div></div>
+    <p class="nb">N.B. The Adoptee will be updated with the progress of the child through mail twice a year in December &amp; July.</p>
+    ${signatures()}
+  </div>`
+}
+
 // ─── Dispatch to HTML Template ───────────────────────────────────────────────
 
 function buildHtml(vm: any): string {
@@ -412,6 +517,10 @@ function buildHtml(vm: any): string {
       return htmlHighSchool(vm)
     case 'secondary_quarterly':
       return htmlSecondaryQuarterly(vm)
+    case 'secondary_quarterly_patron':
+    case 'secondary_term_patron':
+    case 'secondary_annual_patron':
+      return htmlSecondaryPatron(vm)
     case 'secondary_term':
     case 'secondary_annual':
       return htmlSecondaryComplex(vm)
