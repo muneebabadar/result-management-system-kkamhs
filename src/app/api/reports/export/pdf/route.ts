@@ -5,7 +5,8 @@
 // and swap the launch call per the comment at the bottom of this file.
 
 import { NextResponse } from 'next/server'
-import puppeteer        from 'puppeteer'
+import chromium from '@sparticuz/chromium'
+import puppeteer from 'puppeteer-core'
 
 import {
   primaryReportHtml,
@@ -711,9 +712,18 @@ export async function POST(request: Request) {
     const fullHtml = wrap(pages)
 
     // ── Puppeteer PDF ──
+    // ── Puppeteer PDF ──
+    const isVercel = !!process.env.VERCEL
+
     const browser = await puppeteer.launch({
+      args: isVercel ? chromium.args : [],
+      defaultViewport: chromium.defaultViewport,
+
+      executablePath: isVercel
+        ? await chromium.executablePath()
+        : 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
     })
     // For Vercel/serverless, replace the launch above with:
     // import chromium from '@sparticuz/chromium'
