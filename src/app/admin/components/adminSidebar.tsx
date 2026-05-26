@@ -18,7 +18,6 @@ const navItems = [
   { label: 'Manage Users', icon: Users, href: '/admin/manageUsers' },
   { label: 'Manage Students', icon: GraduationCap, href: '/admin/manageStudents' },
   { label: 'Manage Classes', icon: BookOpenCheck, href: '/admin/manageClasses' },
-  { label: 'Set Weightages', icon: Sliders, href: '/admin/weightage' },
   { label: 'Reports', icon: BarChart2, href: '/admin/reports' },
   { label: 'Promotions', icon: ArrowUpRight, href: '/admin/promotions' },
   { label: 'Settings', icon: Settings, href: '/admin/settings' },

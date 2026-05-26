@@ -7,6 +7,12 @@
 import { NextResponse } from 'next/server'
 import puppeteer        from 'puppeteer'
 
+import {
+  primaryReportHtml,
+  DEFAULT_PRIMARY_SKILLS,
+  type PrimaryReportVm,
+} from '@/app/api/reports/_templates/primary_report'  // adjust path to match your project
+
 // ─── Shared HTML Scaffolding ─────────────────────────────────────────────────
 
 const BASE_CSS = `
@@ -319,45 +325,58 @@ function htmlSecondaryComplex(vm: any): string {
 }
 
 // ─── Primary Rubric ───────────────────────────────────────────────────────────
+// Delegates to primary_report.ts which produces the exact physical card layout
+// (two-column skill tables, grade key, attendance box, signatures).
+//
+// The generate route must include these fields on the primary vm:
+//   english, urdu, mathematics, social_science, work_skills,
+//   social_skills, parental  — see PrimaryReportVm in primary_report.ts
+// Any field that is missing falls back to DEFAULT_PRIMARY_SKILLS (blank grades).
 
 function htmlPrimaryRubric(vm: any): string {
-  const groups = Object.entries(vm.skill_groups ?? {})
+  const primaryVm: PrimaryReportVm = {
+    schoolName: 'Khadija Kazi Ali Memorial Higher Secondary School',
+    term:       vm.term      ?? vm.examName ?? '',
+    termLabel:  vm.termLabel ?? undefined,
 
-  const groupHtml = groups.map(([groupName, skills]: [string, any]) => `
-    <div class="skill-group">
-      <div class="skill-group-title">${groupName}</div>
-      ${skills.map((s: any) => `
-        <div class="skill-row">
-          <span>${s.text}</span>
-          <strong>${s.grade}</strong>
-        </div>`).join('')}
-    </div>`).join('')
+    student: {
+      full_name:    vm.student.full_name,
+      gr_number:    vm.student.gr_no       ?? null,
+      class_name:   vm.student.class_name  ?? null,
+      section_name: vm.student.section_name ?? null,
+    },
 
-  const gradeKeyHtml = `
-  <div class="grade-key">
-    <div class="grade-key-title">Grade Key</div>
-    <div class="grade-key-row">
-      ${vm.grade_key.map((g: any) => `
-        <div class="grade-key-item"><span>${g.symbol}</span> ${g.label}</div>`).join('')}
-    </div>
-  </div>`
+    attendance: {
+      total_days:   vm.attendance?.total_days   ?? null,
+      days_present: vm.attendance?.days_present ?? null,
+      days_absent:  vm.attendance?.days_absent  ?? null,
+    },
 
-  return `
-  <div class="page">
-    ${header(vm, vm.examName)}
-    <div class="info-block">
-      <div class="info-row">
-        <div class="info-pair"><span class="lbl">Student:</span><span>${vm.student.full_name}</span></div>
-        <div class="info-pair"><span class="lbl">Class:</span><span>${vm.student.class_name} — ${vm.student.section_name}</span></div>
-      </div>
-    </div>
-    <div class="skill-groups">${groupHtml}</div>
-    ${gradeKeyHtml}
-    ${attendance(vm.attendance)}
-    <div class="remarks-field"><strong>General Remark:</strong><div class="underline">&nbsp;</div></div>
-    <div class="remarks-field" style="margin-top:6px;"><strong>Concluding Remarks:</strong><div class="underline">&nbsp;</div></div>
-    ${signatures()}
-  </div>`
+    english:        vm.english        ?? DEFAULT_PRIMARY_SKILLS.english,
+    urdu:           vm.urdu           ?? DEFAULT_PRIMARY_SKILLS.urdu,
+    mathematics:    vm.mathematics    ?? DEFAULT_PRIMARY_SKILLS.mathematics,
+    social_science: vm.social_science ?? DEFAULT_PRIMARY_SKILLS.social_science,
+    work_skills:    vm.work_skills    ?? DEFAULT_PRIMARY_SKILLS.work_skills,
+    social_skills:  vm.social_skills  ?? DEFAULT_PRIMARY_SKILLS.social_skills,
+    parental:       vm.parental       ?? DEFAULT_PRIMARY_SKILLS.parental,
+
+    general_remark:     vm.general_remark     ?? null,
+    concluding_remarks: vm.concluding_remarks ?? null,
+  }
+
+  // primaryReportHtml returns a complete document with its own <style> block.
+  // Extract BOTH the style and the body — if we take only the body the two-column
+  // card CSS (.body-columns, .skill-table, .top-bar, etc.) is lost and the layout
+  // collapses into a plain list. A <style> tag inside <body> is valid HTML5 and
+  // puppeteer renders it correctly.
+  const fullDoc    = primaryReportHtml(primaryVm)
+  const styleMatch = fullDoc.match(/<style>([\s\S]*?)<\/style>/)
+  const bodyMatch  = fullDoc.match(/<body>([\s\S]*)<\/body>/)
+
+  const inlineStyle = styleMatch ? `<style>${styleMatch[1]}</style>` : ''
+  const bodyContent = bodyMatch  ? bodyMatch[1].trim()               : fullDoc
+
+  return `${inlineStyle}\n${bodyContent}`
 }
 
 // ─── Primary Patron ───────────────────────────────────────────────────────────
@@ -365,44 +384,174 @@ function htmlPrimaryRubric(vm: any): string {
 function htmlPrimaryPatron(vm: any): string {
   const rows = (vm.patron_skills ?? []).map((s: any) => `
     <tr>
-      <td class="left">${s.title}</td>
-      <td>${s.grade}</td>
+      <td class="pt-skill">${s.title}</td>
+      <td class="pt-grade">${s.grade ?? '—'}</td>
     </tr>`).join('')
-
-  const gradeKeyHtml = `
-  <div class="grade-key">
-    <div class="grade-key-title">Grade Key</div>
-    <div class="grade-key-row">
-      ${vm.grade_key.map((g: any) => `
-        <div class="grade-key-item"><span>${g.symbol}</span> ${g.label}</div>`).join('')}
-    </div>
-  </div>`
-
+ 
+  const att = vm.attendance
+ 
+  // Returns a self-contained block with its own <style> so the layout CSS
+  // isn't affected by BASE_CSS (same technique as htmlPrimaryRubric).
   return `
-  <div class="page">
-    ${header(vm, 'Patron Report')}
-    <div class="info-block">
-      <div class="info-row">
-        <div class="info-pair"><span class="lbl">G.R. No.:</span><span>${vm.student.gr_no || '____'}</span></div>
-      </div>
-      <div class="info-row">
-        <div class="info-pair"><span class="lbl">Student:</span><span>${vm.student.full_name}</span></div>
-        <div class="info-pair"><span class="lbl">Class:</span><span>${vm.student.class_name} — ${vm.student.section_name}</span></div>
-      </div>
+<style>
+  .pt-page { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #000;
+             max-width: 680px; margin: 0 auto; padding: 16px 22px; }
+ 
+  /* ── Letterhead ── */
+  .pt-header { display: flex; justify-content: space-between; align-items: flex-start;
+               padding-bottom: 8px; margin-bottom: 10px; }
+  .pt-school-name { font-size: 15px; font-weight: bold; }
+  .pt-school-sub  { font-size: 9px; color: #333; margin-top: 2px; line-height: 1.4; }
+  .pt-logo { width: 54px; height: 54px; border: 1px solid #999; border-radius: 50%;
+             display: flex; align-items: center; justify-content: center;
+             font-size: 8px; color: #555; text-align: center; line-height: 1.3; }
+ 
+  /* ── AC No / student info ── */
+  .pt-ac   { text-align: right; margin-bottom: 10px; font-size: 11px; }
+  .pt-info { margin-bottom: 12px; }
+  .pt-info-row   { display: flex; align-items: baseline; margin-bottom: 6px; gap: 8px; }
+  .pt-info-label { font-weight: bold; min-width: 90px; }
+  .pt-info-val   { border-bottom: 1px solid #000; min-width: 150px; padding-bottom: 1px; }
+ 
+  /* ── "Remarks" heading ── */
+  .pt-heading { text-align: center; font-weight: bold; font-size: 14px; margin: 12px 0 10px; }
+ 
+  /* ── Two-column body ── */
+  .pt-body   { display: flex; gap: 24px; align-items: flex-start; }
+ 
+  /* Skill table */
+  .pt-tbl          { border-collapse: collapse; font-size: 11px; }
+  .pt-tbl th       { background: #d8d8d8; font-weight: bold; border: 1px solid #000;
+                     padding: 3px 10px; text-align: center; }
+  .pt-skill        { border: 1px solid #000; padding: 2px 10px; text-align: left; font-weight: bold; }
+  .pt-grade        { border: 1px solid #000; padding: 2px 8px; text-align: center;
+                     font-weight: bold; width: 52px; }
+ 
+  /* Grade Criteria box */
+  .pt-criteria       { border: 1px solid #000; padding: 10px 16px; min-width: 175px; }
+  .pt-criteria-title { font-weight: bold; text-align: center; text-decoration: underline;
+                       margin-bottom: 12px; font-size: 12px; }
+  .pt-criteria-row   { display: flex; align-items: center; gap: 6px; margin-bottom: 10px;
+                       font-size: 11px; }
+  .pt-criteria-sym   { font-weight: bold; min-width: 24px; }
+  .pt-criteria-eq    { min-width: 10px; }
+ 
+  /* ── Remarks / Conclusion table ── */
+  .pt-rem-tbl     { border-collapse: collapse; width: 100%; margin-top: 14px; font-size: 11px; }
+  .pt-rem-tbl td  { border: 1px solid #000; padding: 6px 10px; vertical-align: top; }
+  .pt-rem-label   { font-weight: bold; width: 110px; }
+  .pt-rem-val     { min-height: 26px; }
+ 
+  /* ── Attendance / N.B. / Signatures ── */
+  .pt-att  { font-size: 10px; margin-top: 10px; }
+  .pt-nb   { margin-top: 16px; font-size: 10px; line-height: 1.5; }
+  .pt-nb b { display: block; }
+  .pt-sigs { display: flex; justify-content: space-between; margin-top: 36px; }
+  .pt-sig  { text-align: center; min-width: 130px; }
+  .pt-sig-line { border-top: 1px solid #000; padding-top: 3px; font-size: 10px; margin-top: 30px; }
+</style>
+ 
+<div class="pt-page">
+ 
+  <!-- Letterhead -->
+  <div class="pt-header">
+    <div>
+      <div class="pt-school-name">Khadija Kazi Ali Memorial Higher Secondary School</div>
+      <div class="pt-school-sub">Plot No. 1, Sec:-6, Sub Sec:-1B, Gulshan-e-Bilal, Surjani Town</div>
+      <div class="pt-school-sub">kkamhs2014@gmail.com &nbsp; kkamhs832014@gmail.com</div>
     </div>
-    <table>
-      <thead><tr><th class="left">Title</th><th>Grade</th></tr></thead>
+    <div class="pt-logo">ESTD.<br>2014</div>
+  </div>
+ 
+  <!-- AC No -->
+  <div class="pt-ac">AC No &nbsp;___________</div>
+ 
+  <!-- Student info -->
+  <div class="pt-info">
+    <div class="pt-info-row">
+      <span class="pt-info-label">GR No</span>
+      <span class="pt-info-val">&nbsp;${vm.student.gr_no || ''}</span>
+    </div>
+    <div class="pt-info-row">
+      <span class="pt-info-label">Child's Name</span>
+      <span class="pt-info-val">&nbsp;${vm.student.full_name}</span>
+    </div>
+    <div class="pt-info-row">
+      <span class="pt-info-label">Class</span>
+      <span class="pt-info-val" style="min-width:110px">&nbsp;${vm.student.class_name || ''}</span>
+      <span class="pt-info-label" style="min-width:30px">Sec</span>
+      <span class="pt-info-val" style="min-width:60px">&nbsp;${vm.student.section_name || ''}</span>
+    </div>
+  </div>
+ 
+  <!-- Section heading -->
+  <div class="pt-heading">Remarks</div>
+ 
+  <!-- Skill table + Grade Criteria side by side -->
+  <div class="pt-body">
+    <table class="pt-tbl">
+      <thead><tr><th>Title</th><th>Grade</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    ${gradeKeyHtml}
-    ${attendance(vm.attendance)}
-    <div class="remarks-field"><strong>Remarks:</strong><div class="underline">&nbsp;</div></div>
-    <div class="remarks-field" style="margin-top:6px;"><strong>Conclusion:</strong><div class="underline">&nbsp;</div></div>
-    <p class="nb">N.B. The Adoptee will be updated with the progress of the child through mail twice a year in December &amp; July.</p>
-    ${signatures()}
-  </div>`
+ 
+    <div class="pt-criteria">
+      <div class="pt-criteria-title">Grade Criteria</div>
+      <div class="pt-criteria-row">
+        <span class="pt-criteria-sym">A +</span>
+        <span class="pt-criteria-eq">=</span>
+        <span>Excellent</span>
+      </div>
+      <div class="pt-criteria-row">
+        <span class="pt-criteria-sym">A</span>
+        <span class="pt-criteria-eq">=</span>
+        <span>Very Good</span>
+      </div>
+      <div class="pt-criteria-row">
+        <span class="pt-criteria-sym">B</span>
+        <span class="pt-criteria-eq">=</span>
+        <span>Good</span>
+      </div>
+      <div class="pt-criteria-row">
+        <span class="pt-criteria-sym">C</span>
+        <span class="pt-criteria-eq">=</span>
+        <span>Satisfactory</span>
+      </div>
+    </div>
+  </div>
+ 
+  <!-- Remarks + Conclusion -->
+  <table class="pt-rem-tbl">
+    <tr>
+      <td class="pt-rem-label">Remarks</td>
+      <td class="pt-rem-val">&nbsp;</td>
+    </tr>
+    <tr>
+      <td class="pt-rem-label">Conclusion</td>
+      <td class="pt-rem-val">&nbsp;</td>
+    </tr>
+  </table>
+ 
+  <!-- Attendance -->
+  ${att
+    ? `<div class="pt-att">Total Days: <strong>${att.total_days ?? '___'}</strong> &nbsp;&nbsp; Days Present: <strong>${att.days_present ?? '___'}</strong></div>`
+    : ''}
+ 
+  <!-- N.B. -->
+  <div class="pt-nb">
+    <b>N.B.</b>
+    The Adoptee will be updated with the progress of child through mail twice a year in December &amp; July.
+  </div>
+ 
+  <!-- Signatures -->
+  <div class="pt-sigs">
+    <div class="pt-sig"><div class="pt-sig-line">Class Teacher</div></div>
+    <div class="pt-sig"><div class="pt-sig-line">Date</div></div>
+    <div class="pt-sig"><div class="pt-sig-line">Principal</div></div>
+  </div>
+ 
+</div>`
 }
-
+ 
 // ─── Secondary Patron (quarterly / term / annual — simplified one-line-per-subject) ──
 
 function htmlSecondaryPatron(vm: any): string {

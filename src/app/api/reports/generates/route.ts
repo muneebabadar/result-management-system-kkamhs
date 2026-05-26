@@ -201,7 +201,6 @@ async function generateHighSchool(
   const subjMax      = rows.reduce((s, r) => s + r.max_marks, 0)
   const subjObtained = rows.reduce((s, r) => s + (r.obtained_marks ?? 0), 0)
 
-  // Behaviour (student report only)
   let behaviour: any[] | null = null
   const { data: beh } = await supabase
     .from('student_exam_behaviour')
@@ -471,7 +470,6 @@ async function generateSecondaryAnnual(
   const rows = subjects.map(subj => {
     const components: any[] = []
 
-    // 2nd semester components (shown first in the annual report, as per sample)
     let sem2Total = 0
     for (const comp of sem2Comps) {
       const m        = marksByKey.get(`${comp.id}-${subj.id}`)
@@ -492,7 +490,6 @@ async function generateSecondaryAnnual(
     const term2Total = sem2Total + (q2Obtained ?? 0)
     components.push({ label: '1st Term Marks', max: term2Max, obtained: term2Total, is_computed: true })
 
-    // 1st semester (computed for annual average)
     let sem1Total = 0
     for (const comp of sem1Comps) {
       const m = marksByKey.get(`${comp.id}-${subj.id}`)
@@ -557,7 +554,15 @@ async function generateSecondaryAnnual(
 }
 
 // ─── Primary Rubric ───────────────────────────────────────────────────────────
-
+//
+// Returns the structured fields (english, urdu, mathematics, …) that
+// htmlPrimaryRubric in the PDF route expects — NOT the old skill_groups shape.
+//
+// group_name convention in rubric_skills (set by seed_primary_rubric.sql):
+//   Language sub-section  →  "<subject>:<section_label>"
+//                            e.g. "english:(i) Listening Skills"
+//   Flat subject          →  "<field_key>"
+//                            e.g. "mathematics"  "work_skills"  "parental"
 async function generatePrimaryRubric(
   req: ReportRequest, year: any, cohort: any, student: any
 ) {
@@ -568,51 +573,142 @@ async function generatePrimaryRubric(
     .eq('is_active', true)
     .maybeSingle()
   if (!exam) return { error: `No exam found for term '${req.examTerm}'` }
-
-  const [{ data: skills }, { data: grades }, { data: att }] = await Promise.all([
-    supabase.from('rubric_skills').select('id, group_name, skill_text, sort_order').order('group_name').order('sort_order'),
-    supabase.from('student_rubric_grades').select('rubric_skill_id, grade').eq('student_id', student.student_id).eq('exam_id', exam.id),
-    supabase.from('student_exam_attendance').select('total_days, days_present').eq('student_id', student.student_id).eq('exam_id', exam.id).maybeSingle(),
+ 
+  const [{ data: skills }, { data: gradeRows }, { data: att }] = await Promise.all([
+    supabase
+      .from('rubric_skills')
+      .select('id, group_name, skill_text, sort_order')
+      .order('group_name')
+      .order('sort_order'),
+    supabase
+      .from('student_rubric_grades')
+      .select('rubric_skill_id, grade')
+      .eq('student_id', student.student_id)
+      .eq('exam_id', exam.id),
+    supabase
+      .from('student_exam_attendance')
+      .select('total_days, days_present, days_absent')
+      .eq('student_id', student.student_id)
+      .eq('exam_id', exam.id)
+      .maybeSingle(),
   ])
-
-  const gradeMap = new Map<number, string>((grades ?? []).map((g: any) => [g.rubric_skill_id, g.grade]))
-
-  // Grouped for student full report
-  const skillGroups: Record<string, { id: number; text: string; grade: string }[]> = {}
-  for (const s of (skills ?? [])) {
-    if (!skillGroups[s.group_name]) skillGroups[s.group_name] = []
-    skillGroups[s.group_name].push({ id: s.id, text: s.skill_text, grade: gradeMap.get(s.id) ?? '—' })
+ 
+  const gradeMap = new Map<number, string>(
+    (gradeRows ?? []).map((g: any) => [g.rubric_skill_id as number, g.grade as string])
+  )
+ 
+  const enriched = (skills ?? []).map((s: any) => ({
+    groupName: s.group_name as string,
+    label:     s.skill_text as string,
+    grade:     gradeMap.get(s.id as number) ?? null,
+  }))
+ 
+  // ── Student report: structured fields for htmlPrimaryRubric ──────────────
+ 
+  function buildSections(prefix: string) {
+    const sectionMap = new Map<string, { label: string; grade: string | null }[]>()
+    for (const s of enriched.filter(s => s.groupName.startsWith(`${prefix}:`))) {
+      const sectionLabel = s.groupName.slice(prefix.length + 1)
+      if (!sectionMap.has(sectionLabel)) sectionMap.set(sectionLabel, [])
+      sectionMap.get(sectionLabel)!.push({ label: s.label, grade: s.grade })
+    }
+    return {
+      sections: Array.from(sectionMap.entries()).map(([label, skills]) => ({ label, skills })),
+    }
   }
-
-  // Flat list for patron concise report
-  const patronSkills = (skills ?? []).map((s: any) => ({ title: s.skill_text, grade: gradeMap.get(s.id) ?? '—' }))
-
+ 
+  function buildSkillList(groupName: string) {
+    return enriched
+      .filter(s => s.groupName === groupName)
+      .map(s => ({ label: s.label, grade: s.grade }))
+  }
+ 
+  // ── Patron report: one row per section ────────────────────────────────────
+  //
+  // Grade = most common grade among skills in that section.
+  // Title strips the roman-numeral prefix and prefixes with language name
+  // for English/Urdu sub-sections.
+ 
+  function sectionGrade(groupName: string): string {
+    const grades = enriched
+      .filter(s => s.groupName === groupName)
+      .map(s => s.grade)
+      .filter(Boolean) as string[]
+    if (!grades.length) return '—'
+    const freq = new Map<string, number>()
+    for (const g of grades) freq.set(g, (freq.get(g) ?? 0) + 1)
+    return [...freq.entries()].sort((a, b) => b[1] - a[1])[0][0]
+  }
+ 
+  function formatPatronTitle(groupName: string): string {
+    if (groupName.includes(':')) {
+      const [subject, section] = groupName.split(':')
+      const lang         = subject.charAt(0).toUpperCase() + subject.slice(1)
+      const sectionClean = section.replace(/^\([ivxIVX]+\)\s*/, '')
+      return `${lang} – ${sectionClean}`
+    }
+    return groupName
+      .split('_')
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ')
+  }
+ 
+  const seenGroups = new Set<string>()
+  const patronSkills: { title: string; grade: string }[] = []
+  for (const s of enriched) {
+    if (seenGroups.has(s.groupName)) continue
+    seenGroups.add(s.groupName)
+    patronSkills.push({ title: formatPatronTitle(s.groupName), grade: sectionGrade(s.groupName) })
+  }
+ 
+  // ── Shared base ───────────────────────────────────────────────────────────
+ 
   const gradeKey = [
-    { symbol: 'A+', label: 'Excellent / Always',          min: 90 },
-    { symbol: 'A',  label: 'Good / Often',                min: 80 },
-    { symbol: 'B',  label: 'Fair / Occasionally',         min: 70 },
-    { symbol: 'C',  label: 'Just Satisfactory / Seldom',  min: 60 },
-    { symbol: 'U',  label: 'Unsatisfactory / Never',      min: 40 },
+    { symbol: 'A+', label: 'Excellent / Always'         },
+    { symbol: 'A',  label: 'Good / Often'               },
+    { symbol: 'B',  label: 'Fair / Occasionally'        },
+    { symbol: 'C',  label: 'Just Satisfactory / Seldom' },
+    { symbol: 'U',  label: 'Unsatisfactory / Never'     },
   ]
-
-  return {
-    template:    req.audience === 'patron' ? 'primary_patron' : 'primary_rubric',
+ 
+  const base = {
     audience:    req.audience,
     academicYear:year.name,
     examName:    exam.name,
+    term:        exam.name,
     examTerm:    req.examTerm,
     student: {
-      gr_no:       student.gr_no,
-      full_name:   student.full_name,
-      class_name:  cohort.class_name,
-      section_name:cohort.section_name,
+      gr_no:        student.gr_no,
+      gr_number:    student.gr_no,
+      full_name:    student.full_name,
+      class_name:   cohort.class_name,
+      section_name: cohort.section_name,
+      roll_number:  student.roll_number,
     },
-    skill_groups:  req.audience === 'student' ? skillGroups : null,
-    patron_skills: req.audience === 'patron'  ? patronSkills : null,
-    grade_key:     gradeKey,
-    attendance:    att ?? null,
-    general_remark:    '',
-    concluding_remarks:'',
+    attendance: {
+      total_days:   att?.total_days   ?? null,
+      days_present: att?.days_present ?? null,
+      days_absent:  att?.days_absent  ?? null,
+    },
+    grade_key:          gradeKey,
+    general_remark:     null,
+    concluding_remarks: null,
+  }
+ 
+  if (req.audience === 'patron') {
+    return { ...base, template: 'primary_patron', patron_skills: patronSkills }
+  }
+ 
+  return {
+    ...base,
+    template:       'primary_rubric',
+    english:        buildSections('english'),
+    urdu:           buildSections('urdu'),
+    mathematics:    buildSkillList('mathematics'),
+    social_science: buildSkillList('social_science'),
+    work_skills:    buildSkillList('work_skills'),
+    social_skills:  buildSkillList('social_skills'),
+    parental:       buildSkillList('parental'),
   }
 }
 
@@ -625,9 +721,9 @@ async function dispatch(req: ReportRequest, year: any, scales: GradeScale[], coh
   if (level === 'primary') return generatePrimaryRubric(req, year, cohort, student)
 
   if (level === 'secondary') {
-    if (examTerm === 'q1' || examTerm === 'q2') return generateSecondaryQuarterly(req, year, scales, cohort, student)
-    if (examTerm === 'sem1' || examTerm === 'sem2')  return generateSecondaryTerm(req, year, scales, cohort, student)
-    if (examTerm === 'annual')                        return generateSecondaryAnnual(req, year, scales, cohort, student)
+    if (examTerm === 'q1' || examTerm === 'q2')         return generateSecondaryQuarterly(req, year, scales, cohort, student)
+    if (examTerm === 'sem1' || examTerm === 'sem2')     return generateSecondaryTerm(req, year, scales, cohort, student)
+    if (examTerm === 'annual')                          return generateSecondaryAnnual(req, year, scales, cohort, student)
   }
 
   if (level === 'high_school') return generateHighSchool(req, year, scales, cohort, student)
@@ -659,13 +755,13 @@ export async function POST(request: Request) {
       if (!student) return NextResponse.json({ error: 'Student enrollment not found' }, { status: 404 })
 
       const result = await dispatch(body, year, scales, cohort, student)
-      if (!result)        return NextResponse.json({ error: 'Could not generate report' }, { status: 400 })
+      if (!result)             return NextResponse.json({ error: 'Could not generate report' }, { status: 400 })
       if ((result as any).error) return NextResponse.json({ error: (result as any).error }, { status: 400 })
 
       return NextResponse.json({ success: true, data: result })
     }
 
-    // Class scope — generate one report per enrolled student
+    // Class scope — one report per enrolled student
     const students = await getAllEnrolledStudents(year.id, classSectionId)
     const reports: any[] = []
 

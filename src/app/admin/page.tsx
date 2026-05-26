@@ -112,7 +112,6 @@ export default function AdminDashboard() {
             <QuickAction icon={Users} label="Manage Users" href="/admin/manageUsers" />
             <QuickAction icon={GraduationCap} label="Manage Students" href="/admin/manageStudents" />
             <QuickAction icon={BookOpenCheck} label="Manage Classes" href="/admin/manageClasses" />
-            <QuickAction icon={Sliders} label="Set Weightages" href="/admin/weightage" />
             <QuickAction icon={BarChart2} label="Reports" href="/admin/reports" />
             <QuickAction icon={Trophy} label="Promotions" href="/admin/promotions" />
           </div>
