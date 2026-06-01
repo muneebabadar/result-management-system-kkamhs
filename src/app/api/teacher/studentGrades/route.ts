@@ -1,12 +1,4 @@
 // File: app/api/teacher/studentGrades/route.ts
-//
-// GET  /api/teacher/studentGrades?class_id=X&section_id=Y&teacher_id=Z
-//   Returns students enrolled in the current academic year for that class+section,
-//   the subjects this teacher teaches there, all active exams with their components,
-//   and existing marks as a lookup map.
-//
-// POST /api/teacher/studentGrades
-//   Upserts a single student_component_marks row.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
