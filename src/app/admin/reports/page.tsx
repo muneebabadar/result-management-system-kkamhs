@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 type Level    = 'primary' | 'secondary' | 'high_school'
 type Scope    = 'individual' | 'class'
 type Audience = 'student' | 'patron'
-type Term     = 'q1' | 'q2' | 'sem1' | 'sem2' | 'preliminary' | 'annual' | 'term1' | 'term2'
+type Term = 'q1' | 'q2' | 'sem1' | 'sem2' | 'preliminary' | 'annual' | 'term1' | 'term2' | 'term3'
 
 interface CohortOption {
   id:           number
@@ -26,8 +26,9 @@ interface StudentOption {
 // Exam terms available per school level
 const TERM_OPTIONS: Record<Level, { value: Term; label: string }[]> = {
   primary: [
-    { value: 'term1', label: '1st Term' },
-    { value: 'term2', label: '2nd Term' },
+  { value: 'term1', label: '1st Term' },
+  { value: 'term2', label: '2nd Term' },
+  { value: 'term3', label: '3rd Term' },
   ],
   secondary: [
     { value: 'q1',     label: '1st Quarterly Test' },
