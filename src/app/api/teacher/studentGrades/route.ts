@@ -1,97 +1,193 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+// File: app/api/teacher/studentGrades/route.ts
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
   { auth: { persistSession: false } }
-);
+)
 
-// GET: Fetch Students & Grades for a specific Assignment ID
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const assignmentId = searchParams.get('assignment_id');
-
-  if (!assignmentId) return NextResponse.json({ error: 'Missing Assignment ID' }, { status: 400 });
-
+// ---------------------------------------------------------------------------
+// GET
+// ---------------------------------------------------------------------------
+export async function GET(req: NextRequest) {
   try {
-    // 1. Get Assignment Details AND Grading Config
-    const { data: assignment } = await supabase
-      .from('teacher_assignments')
-      // We add class_grading_config to the select query here
-      .select('*, classes(name, class_grading_config(weight_1, weight_2, weight_mid, weight_final)), sections(id, name), subjects(name)')
-      .eq('id', assignmentId)
-      .single();
+    const { searchParams } = new URL(req.url)
+    const classId   = searchParams.get('class_id')
+    const sectionId = searchParams.get('section_id')
+    const teacherId = searchParams.get('teacher_id')
 
-    if (!assignment) throw new Error('Class not found');
+    if (!classId || !sectionId || !teacherId) {
+      return NextResponse.json(
+        { error: 'class_id, section_id, and teacher_id are required' },
+        { status: 400 }
+      )
+    }
 
-    // 2. Get Students in that Section AND their grades for this assignment
-    const { data: students, error } = await supabase
-      .from('students')
+    // 1. Current academic year ------------------------------------------------
+    const { data: currentYear, error: yearError } = await supabase
+      .from('academic_years')
+      .select('id, name')
+      .eq('is_current', true)
+      .single()
+
+    if (yearError || !currentYear) {
+      return NextResponse.json({ error: 'No current academic year found' }, { status: 404 })
+    }
+
+    // 2. Enrolled students ----------------------------------------------------
+    //    student_enrollments links student → class + section + academic_year
+    const { data: enrollments, error: enrollError } = await supabase
+      .from('student_enrollments')
       .select(`
-        id, name, roll_number,
-        grades ( assessment_1, assessment_2, midterm, final_exam )
+        id,
+        roll_number,
+        student_id,
+        students ( id, full_name, gr_no )
       `)
-      .eq('section_id', assignment.sections.id)
-      .eq('grades.assignment_id', assignmentId); // Only get grades for THIS subject
+      .eq('class_id', classId)
+      .eq('section_id', sectionId)
+      .eq('academic_year_id', currentYear.id)
+      .eq('status', 'active')
+      .order('roll_number')
 
-    if (error) throw error;
+    if (enrollError) throw enrollError
 
-    // 3. Format data for frontend
-    const formattedStudents = students.map((s: any) => {
-      // Grades comes as an array, take the first one or default to 0
-      const g = s.grades?.[0] || { assessment_1: 0, assessment_2: 0, midterm: 0, final_exam: 0 };
-      return {
-        studentId: s.id,
-        name: s.name,
-        ...g
-      };
-    });
+    // 3. Subjects this teacher teaches in this class+section ------------------
+    const { data: assignments, error: assignError } = await supabase
+      .from('teacher_assignments')
+      .select('subject_id, subjects ( id, name )')
+      .eq('teacher_id', teacherId)
+      .eq('class_id', classId)
+      .eq('section_id', sectionId)
 
-    // Extract weights (default to 25 if missing)
-    // We look into the nested array because of the join
-    const weights = assignment.classes.class_grading_config?.[0] || { 
-        weight_1: 25, weight_2: 25, weight_mid: 25, weight_final: 25 
-    };
+    if (assignError) throw assignError
+
+    const subjects = (assignments ?? []).map((a: any) => ({
+      id:   a.subjects.id,
+      name: a.subjects.name,
+    }))
+
+    // 4. Active exams + their components for this academic year ---------------
+    const { data: exams, error: examError } = await supabase
+      .from('exams')
+      .select(`
+        id, name, exam_type, term,
+        exam_components ( id, name, max_marks, sort_order )
+      `)
+      .eq('academic_year_id', currentYear.id)
+      .eq('is_active', true)
+      .order('starts_on')
+
+    if (examError) throw examError
+
+    // 5. Existing marks -------------------------------------------------------
+    const studentIds = (enrollments ?? []).map((e: any) => e.student_id)
+    const subjectIds = subjects.map((s: any) => s.id)
+
+    let existingMarks: any[] = []
+    if (studentIds.length > 0 && subjectIds.length > 0) {
+      const { data: marks, error: marksError } = await supabase
+        .from('student_component_marks')
+        .select('student_id, subject_id, exam_component_id, obtained_marks, is_absent')
+        .in('student_id', studentIds)
+        .in('subject_id', subjectIds)
+
+      if (marksError) throw marksError
+      existingMarks = marks ?? []
+    }
+
+    // Build lookup: marks_lookup[studentId][subjectId][componentId]
+    const marks_lookup: Record<string, Record<string, Record<string, {
+      obtained_marks: number | null
+      is_absent: boolean
+    }>>> = {}
+
+    for (const m of existingMarks) {
+      if (!marks_lookup[m.student_id])               marks_lookup[m.student_id] = {}
+      if (!marks_lookup[m.student_id][m.subject_id]) marks_lookup[m.student_id][m.subject_id] = {}
+      marks_lookup[m.student_id][m.subject_id][m.exam_component_id] = {
+        obtained_marks: m.obtained_marks,
+        is_absent:      m.is_absent,
+      }
+    }
+
+    const students = (enrollments ?? []).map((e: any) => ({
+      enrollment_id: e.id,
+      student_id:    e.student_id,
+      roll_number:   e.roll_number,
+      full_name:     e.students?.full_name ?? '',
+      gr_no:         e.students?.gr_no ?? '',
+    }))
 
     return NextResponse.json({
-      success: true,
-      className: `${assignment.classes.name} - ${assignment.sections.name}`,
-      subjectName: assignment.subjects.name,
-      weights: weights, 
-      students: formattedStudents
-    });
+      data: {
+        academic_year: currentYear,
+        students,
+        subjects,
+        exams,
+        marks_lookup,
+      },
+    })
 
-  } catch (error) {
-    console.error('API Error:', error);
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+  } catch (err) {
+    console.error('[GET /api/teacher/studentGrades]', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
-// POST: Save Grades
-export async function POST(request: Request) {
+// ---------------------------------------------------------------------------
+// POST — upsert one mark cell
+// ---------------------------------------------------------------------------
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json();
-    const { assignmentId, grades } = body;
+    const body = await req.json()
+    const { student_id, subject_id, exam_component_id, obtained_marks, is_absent } = body
 
-    // We use 'upsert' to either insert new grades or update existing ones
-    const updates = grades.map((g: any) => ({
-      student_id: g.studentId,
-      assignment_id: assignmentId,
-      assessment_1: g.assessment_1,
-      assessment_2: g.assessment_2,
-      midterm: g.midterm,
-      final_exam: g.final_exam
-    }));
+    if (!student_id || !subject_id || !exam_component_id) {
+      return NextResponse.json(
+        { error: 'student_id, subject_id, and exam_component_id are required' },
+        { status: 400 }
+      )
+    }
+
+    // Validate obtained_marks doesn't exceed max_marks for this component
+    if (!is_absent && obtained_marks !== null && obtained_marks !== undefined) {
+      const { data: component } = await supabase
+        .from('exam_components')
+        .select('max_marks')
+        .eq('id', exam_component_id)
+        .single()
+
+      if (component && Number(obtained_marks) > Number(component.max_marks)) {
+        return NextResponse.json(
+          { error: `Marks cannot exceed maximum of ${component.max_marks}` },
+          { status: 400 }
+        )
+      }
+    }
 
     const { error } = await supabase
-      .from('grades')
-      .upsert(updates, { onConflict: 'student_id, assignment_id' });
+      .from('student_component_marks')
+      .upsert(
+        {
+          student_id,
+          subject_id,
+          exam_component_id,
+          obtained_marks: is_absent ? null : (obtained_marks ?? null),
+          is_absent:      is_absent ?? false,
+        },
+        { onConflict: 'student_id,subject_id,exam_component_id' }
+      )
 
-    if (error) throw error;
+    if (error) throw error
 
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+    return NextResponse.json({ success: true })
+
+  } catch (err) {
+    console.error('[POST /api/teacher/studentGrades]', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
